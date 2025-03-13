@@ -18,11 +18,17 @@ class CurrencyManager:
         self.balances = {}
         self.inventories = {}
         self.lock = asyncio.Lock()
+        self.token = CURRENCY_TOKEN
         
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
         
         self._load_data()
+
+
+    def amount_string(self, amount):
+        """Format an amount as a string with the currency token"""
+        return f"{self.token}{amount}"
     
 
     def _load_data(self):

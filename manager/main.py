@@ -48,6 +48,7 @@ class GameManager:
     async def start_game(self, game_type, channel_id, players, *args, currency_required=False):
         """Start a new game instance"""
 
+
         if game_type.lower() not in self.games:
             return False, f"Game '{game_type}' not found"
         
@@ -99,7 +100,7 @@ game_manager = GameManager()
 @bot.event
 async def on_ready():
     """Bot startup event"""
-    
+
     print(f"{bot.user.name} has connected to Discord!")
     game_manager.load_games()
     print(f"Available games: {', '.join(game_manager.games.keys())}")
@@ -321,7 +322,6 @@ async def on_reaction_add(reaction, user):
     if user.bot:
         return
         
-    
     channel_id = reaction.message.channel.id
     game = game_manager.get_game(channel_id)
     

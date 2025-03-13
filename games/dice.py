@@ -58,6 +58,7 @@ class Game(BaseGame):
             self.state['bet'] = 100
             self.state['goal'] = 4000
 
+        self.required_players = 1
         self.max_players = 2
         self.uses_currency = True
         self.currency_manager = None
@@ -68,7 +69,7 @@ class Game(BaseGame):
     async def start_game(self, ctx):
         """Start the Dice game"""
 
-        self.state['waiting_for_players'] = len(self.players) < 1
+        self.state['waiting_for_players'] = len(self.players) < self.required_players
         
         if self.message:
             await self.message.add_reaction("🎲")
@@ -89,34 +90,76 @@ class Game(BaseGame):
         
         self.state['phase'] = 'setup'
         self.state['turn_message'] = f"{self.current_player.mention} Please enter bet amount and goal in format 'bet,goal' (e.g. '10,100')"
+        self.state['turn_message'] = f"{self.current_player.mention} Please have another player join the game!"
+
+        # # just skip to play stage, don't need a betting stage
+        # self.state['phase'] = 'play'
+        # #start_message = await message.channel.send(f"Game started! Initial bet: {bet}, goal: {goal}")
+        # self.state['turn_message'] = f"Game started! Initial bet: {self.state['bet']}, goal: {self.state['goal']}"
         
-        await super().start_game(ctx)
+        # await super().start_game(ctx)
     
 
     def is_joinable(self):
         """Check if the game can be joined"""
 
-        return self.is_active and len(self.players) < 2 and (self.state['phase'] == 'setup' or self.state['waiting_for_players'])
+        return self.is_active and len(self.players) < self.required_players and (self.state['phase'] == 'setup' or self.state['waiting_for_players'])
     
 
     async def add_player_via_reaction(self, player):
         """Add a player who joined via reaction"""
 
+        bet = self.state['bet']
+
         if not self.is_joinable() or player in self.players:
             return False
-            
-        self.add_player(player)
         
         if self.currency_manager:
             balance = await self.currency_manager.get_balance(player.id)
+            error_msg = None
+            
+            if balance < bet:
+                error_msg = await self.message.channel.send(
+                    f"{player.display_name} doesn't have enough funds for \"{self.state['dice_mode']}\"! (has {self.currency_manager.amount_string(balance)}, needs {self.currency_manager.amount_string(bet)})"
+                )
+            
+            if not error_msg:
+                success, new_balance = await self.currency_manager.remove_funds(
+                    player.id, 
+                    bet, 
+                    "dice",
+                    f"Bet placed in Dice game"
+                )
+                    
+                if success:
+                    self.state['player_balances'][player.id] = new_balance
+                else:
+                    error_msg = await self.message.channel.send(
+                        f"Failed to place bet for {player.display_name}: {self.currency_manager.amount_string(bet)} ({self.currency_manager.amount_string(new_balance)})"
+                    )
+        
+            if error_msg:
+                await asyncio.sleep(3)
+                try:
+                    await error_msg.delete()
+                except:
+                    pass
+
             self.state['player_balances'][player.id] = balance
             self.state['scores'][player.id] = 0
+
+        self.add_player(player)
         
-        if len(self.players) >= 2 and self.state['waiting_for_players']:
+        if len(self.players) >= self.required_players and self.state['waiting_for_players']:
             self.state['waiting_for_players'] = False
-            self.state['phase'] = 'setup'
-            self.state['turn_message'] = f"{self.current_player.mention} Please enter bet amount and goal in format 'bet,goal' (e.g. '10,100')"
+            self.state['phase'] = 'play'
+            # self.state['turn_message'] = f"{self.current_player.mention} Please enter bet amount and goal in format 'bet,goal' (e.g. '10,100')"
+            self.state['turn_message'] = "Ready to play!"
+
+            self._roll_dice()
+
             await self.update_display()
+            await self.start_turn(self.message.channel)
             
         return True
     
@@ -151,6 +194,7 @@ class Game(BaseGame):
         if self.state['waiting_for_players']:
             Box.draw_box(screen, 20, 10, 40, 5, style="single", title="Waiting for Players")
             screen.draw_text(22, 12, "React with 🎲 to join the game!")
+            screen.draw_text(3, 22, " 🎲 Join Game | 💰 Show Balance | !end to quit ")
             
         elif self.state['phase'] == 'setup':
             Box.draw_box(screen, 20, 10, 40, 5, style="rounded", title="Setup Phase")
@@ -242,6 +286,7 @@ class Game(BaseGame):
     
     async def _process_setup(self, message, command):
         """Process setup phase commands"""
+
         try:
             bet_str, goal_str = command.split(',')
             bet = int(bet_str.strip())
@@ -268,7 +313,7 @@ class Game(BaseGame):
                     success, new_balance = await self.currency_manager.remove_funds(
                         player.id, 
                         bet, 
-                        "dice", 
+                        "dice",
                         f"Bet placed in Dice game"
                     )
                     
@@ -454,6 +499,7 @@ class Game(BaseGame):
 
     def _roll_dice(self):
         """Roll 6 dice with random values 1-6"""
+
         self.state['dice'] = [random.randint(1, 6) for _ in range(6)]
     
 
@@ -471,7 +517,7 @@ class Game(BaseGame):
         
         # Combos
         
-        # 1. Straight (sequence of 5 or more consecutive values)
+        # Straight (sequence of 5 or more consecutive values)
         if len(selected_values) >= 5:
             unique_vals = sorted(set(selected_values))
             if len(unique_vals) >= 5:
@@ -484,19 +530,19 @@ class Game(BaseGame):
                 if is_straight and len(unique_vals) >= 5:
                     return "Straight", len(unique_vals) * 10
         
-        # 2. Three or more of a kind
+        # Three or more of a kind
         for val, count in value_counts.items():
             if count >= 3:
                 return f"{count} of a kind ({val}s)", count * val * 2
         
-        # 3. Two Pairs
-        pairs = [val for val, count in value_counts.items() if count >= 2]
-        if len(pairs) >= 2:
-            return "Two Pairs", sum(pairs) * 2
-        
-        # 4. One Pair
-        if len(pairs) == 1:
-            return f"Pair of {pairs[0]}s", pairs[0] * 2
+        # # 3. Two Pairs
+        # pairs = [val for val, count in value_counts.items() if count >= 2]
+        # if len(pairs) >= 2:
+        #     return "Two Pairs", sum(pairs) * 2
+        #
+        # # 4. One Pair
+        # if len(pairs) == 1:
+        #     return f"Pair of {pairs[0]}s", pairs[0] * 2
         
         # No valid combo
         return None, 0
@@ -504,6 +550,7 @@ class Game(BaseGame):
 
     async def award_winner(self, winner_id):
         """Award the winner with the bet amount"""
+
         if not self.currency_manager:
             return
         
@@ -519,6 +566,7 @@ class Game(BaseGame):
         if success:
             self.state['player_balances'][winner_id] = new_balance
             
+
     async def cleanup_currency(self):
         """Handle any cleanup related to currency when game ends abruptly"""
         if self.state['phase'] == 'setup' or self.state['winner']:

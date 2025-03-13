@@ -1,4 +1,5 @@
 import asyncio
+import json
 from abc import ABC, abstractmethod
 from games.display.screen import Screen
 
@@ -18,7 +19,9 @@ class BaseGame(ABC):
         self.current_player = players[0] if players else None
         self.is_active = False
         self.is_waiting_for_input = False
-
+        self.required_players = 1
+        self.max_players = 1
+        self.currency_manager = None
         # discord Message with screen
         self.message = None
         self.state = {}
@@ -85,6 +88,12 @@ class BaseGame(ABC):
         if self.message:
             display = self.render_display()
             await self.message.edit(content=f"```\n{display}\n```")
+
+
+    def serialize_state(self):
+        """Serialize the game state"""
+        
+        return json.dumps(self.state, indent=2)
             
 
     def prepare_screen(self):
