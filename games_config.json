@@ -3,12 +3,14 @@
     {
       "name": "TicTacToe",
       "module": "games.tictactoe",
-      "description": "Classic Tic Tac Toe game for 2 players"
+      "description": "Classic Tic Tac Toe game for 2 players",
+      "enabled": false
     },
     {
       "name": "ConnectFour",
       "module": "games.connectfour",
-      "description": "Connect Four game where players drop pieces to connect 4 in a row"
+      "description": "Connect Four game where players drop pieces to connect 4 in a row",
+      "enabled": false
     },
     {
       "name": "Dice",

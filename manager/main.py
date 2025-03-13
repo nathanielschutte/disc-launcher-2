@@ -4,6 +4,8 @@ import importlib
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+import traceback
+
 from manager.currency_manager import CurrencyManager
 
 load_dotenv()
@@ -31,6 +33,9 @@ class GameManager:
                 config = json.load(f)
             
             for game_info in config.get('games', []):
+                if game_info.get('enabled', True) is False:
+                    continue
+
                 game_name = game_info.get('name')
                 module_path = game_info.get('module')
                 
@@ -131,6 +136,7 @@ async def daily_bonus(ctx):
     else:
         await ctx.send(f"Error: {result}")
 
+
 @bot.command(name='give')
 async def give_currency(ctx, recipient: discord.Member, amount: int):
     """Give some of your currency to another player"""
@@ -158,6 +164,7 @@ async def give_currency(ctx, recipient: discord.Member, amount: int):
         await ctx.send(f"{ctx.author.mention} gave ${amount} to {recipient.mention}")
     else:
         await ctx.send(f"Error: {result}")
+
 
 @bot.command(name='leaderboard', aliases=['lb', 'rich'])
 async def currency_leaderboard(ctx):
@@ -190,6 +197,7 @@ async def currency_leaderboard(ctx):
     
     await ctx.send(embed=embed)
 
+
 @bot.command(name='addcurrency')
 @commands.has_permissions(administrator=True)
 async def add_currency(ctx, recipient: discord.Member, amount: int):
@@ -210,6 +218,7 @@ async def add_currency(ctx, recipient: discord.Member, amount: int):
     else:
         await ctx.send(f"Error: {result}")
 
+
 @bot.command(name='setcurrency')
 @commands.has_permissions(administrator=True)
 async def set_currency(ctx, recipient: discord.Member, amount: int):
@@ -224,6 +233,7 @@ async def set_currency(ctx, recipient: discord.Member, amount: int):
         await ctx.send(f"Set {recipient.mention}'s balance to ${amount}")
     else:
         await ctx.send(f"Error: {result}")
+
 
 @bot.command(name='games')
 async def list_games(ctx):
@@ -252,8 +262,12 @@ async def start_game(ctx, game_type: str, *args):
             await game.start_game(ctx)
         except Exception as e:
             await ctx.send(f"Failed to start game ({type(e).__name__}): {e}")
+            print(f"Failed to start game: {e}")
+            print(traceback.format_exc())
+
     else:
         await ctx.send(result)
+
 
 @bot.command(name='join')
 async def join_game(ctx):
