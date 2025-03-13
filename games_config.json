@@ -1,0 +1,19 @@
+{
+  "games": [
+    {
+      "name": "TicTacToe",
+      "module": "games.tictactoe",
+      "description": "Classic Tic Tac Toe game for 2 players"
+    },
+    {
+      "name": "ConnectFour",
+      "module": "games.connectfour",
+      "description": "Connect Four game where players drop pieces to connect 4 in a row"
+    },
+    {
+      "name": "Dice",
+      "module": "games.dice",
+      "description": "Dice game based on Kingdom Come: Deliverance II where players roll dice to form scoring combinations"
+    }
+  ]
+}
