@@ -17,6 +17,7 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 currency_manager = CurrencyManager()
+currency_manager.starting_balance = 100
 
 
 class GameManager:
@@ -70,9 +71,9 @@ class GameManager:
         if hasattr(game, 'uses_currency') and game.uses_currency:
             game.currency_manager = currency_manager
 
-            if currency_required:
-                for player in players:
-                    await currency_manager.ensure_minimum_balance(player.id, 100)
+            # if currency_required:
+            #     for player in players:
+            #         await currency_manager.ensure_minimum_balance(player.id, 100)
         
         self.active_games[channel_id] = game
         
@@ -175,7 +176,6 @@ async def currency_leaderboard(ctx):
         await ctx.send("No players have currency yet")
         return
     
-    # Build embed for leaderboard
     embed = discord.Embed(
         title="💰 Currency Leaderboard 💰",
         description="The richest players on the server",
@@ -192,6 +192,39 @@ async def currency_leaderboard(ctx):
         embed.add_field(
             name=f"{i+1}. {name}",
             value=f"${balance}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='trophies', aliases=['tr', 'medals'])
+async def currency_trophies(ctx):
+    """Display the richest players on the server"""
+    tr = await currency_manager.get_trophies()
+    
+    if not tr:
+        await ctx.send("No players have trophies yet")
+        return
+    
+    embed = discord.Embed(
+        title="🏆 Trophy Leaderboard 🏆",
+        description="The most successful players on the server",
+        color=discord.Color.dark_gold()
+    )
+    
+    for i, (user_id, items) in enumerate(tr):
+        try:
+            user = await bot.fetch_user(user_id)
+            name = user.name
+        except:
+            name = f"User {user_id}"
+        
+        string = " | ".join([f"{item['count']}x {name}" for name, item in items.items()])
+
+        embed.add_field(
+            name=f"{i+1}. {name}",
+            value=string,
             inline=False
         )
     
@@ -255,8 +288,7 @@ async def start_game(ctx, game_type: str, *args):
     if success:
         game = result
         await ctx.send(f"Starting a new game of {game_type}!")
-        display = game.render_display()
-        game.message = await ctx.send(f"```\n{display}\n```")
+        game.message = await game.render_and_send_display(ctx)
 
         try:
             await game.start_game(ctx)
@@ -285,12 +317,10 @@ async def join_game(ctx):
     
     if game.is_joinable():
         game.add_player(ctx.author)
-        await ctx.send(f"{ctx.author.display_name} joined the game!")
-        
-        display = game.render_display()
-        await game.message.edit(content=f"```\n{display}\n```")
+        msg = await ctx.send(f"{ctx.author.display_name} joined the game!")
+        await game.update_display()
     else:
-        await ctx.send("Sorry, this game cannot be joined at this time")
+        await ctx.send("Game cannot be joined")
 
 
 @bot.command(name='end')
@@ -320,11 +350,17 @@ async def on_message(message):
     
     game = game_manager.get_game(message.channel.id)
     
-    if game and game.is_waiting_for_input and game.current_player == message.author:
+    if message.content.strip().lower() == "!end":
+        success, res = await game_manager.end_game(message.channel.id)
+        await message.channel.send(res)
+        return
+    elif game and game.is_waiting_for_input and game.current_player == message.author:
         await game.process_command(message)
+        return
     elif game and game.is_active:
         if hasattr(game, 'process_command'):
             await game.process_command(message)
+            return
     
     await bot.process_commands(message)
 

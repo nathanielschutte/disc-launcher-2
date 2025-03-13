@@ -4,6 +4,8 @@ import asyncio
 from datetime import datetime
 
 CURRENCY_TOKEN = "💰"
+CURRENCY_TOKEN_SHORT = "$"
+STARTING_BALANCE = 100
 
 class CurrencyManager:
     """Manages player currency balances across the Discord server"""
@@ -19,6 +21,8 @@ class CurrencyManager:
         self.inventories = {}
         self.lock = asyncio.Lock()
         self.token = CURRENCY_TOKEN
+        self.token_short = CURRENCY_TOKEN_SHORT
+        self.starting_balance = STARTING_BALANCE
         
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
@@ -26,9 +30,10 @@ class CurrencyManager:
         self._load_data()
 
 
-    def amount_string(self, amount):
+    def amount_string(self, amount, short=False):
         """Format an amount as a string with the currency token"""
-        return f"{self.token}{amount}"
+        
+        return f"{self.token if not short else self.token_short}{amount}"
     
 
     def _load_data(self):
@@ -64,7 +69,7 @@ class CurrencyManager:
             with open(self.currency_file, 'w') as f:
                 json.dump(self.balances, f, indent=2)
 
-            with open(self.inventories, 'w') as f:
+            with open(self.inventory_file, 'w') as f:
                 json.dump(self.inventories, f, indent=2)
     
 
@@ -99,6 +104,8 @@ class CurrencyManager:
         """Get a player's current balance"""
 
         user_id = int(user_id)
+        if user_id not in self.balances:
+            self.balances[user_id] = self.starting_balance
         return self.balances.get(user_id, 0)
     
 
@@ -154,8 +161,35 @@ class CurrencyManager:
         return True, f"Transferred {CURRENCY_TOKEN}{amount} from {from_user_id} to {to_user_id}"
     
 
+    async def get_inventory(self, user_id):
+        """Get a player's inventory"""
+        
+        user_id = int(user_id)
+        return self.inventories.get(user_id, {})
+    
+
+    async def add_item(self, user_id, item, quantity=1, game=None, details=None, item_type=None):
+        user_id = int(user_id)
+
+        async with self.lock:
+            if user_id not in self.inventories:
+                self.inventories[user_id] = {}
+
+            if item not in self.inventories[user_id]:
+                self.inventories[user_id][item] = {}
+            
+            self.inventories[user_id][item]['count'] = self.inventories[user_id][item].get('count', 0) + quantity
+            self.inventories[user_id][item]['game'] = game
+            self.inventories[user_id][item]['details'] = details
+            self.inventories[user_id][item]['type'] = item_type
+
+        await self._save_data()
+        return True, f"Added {quantity} {item} to {user_id}'s inventory"
+    
+
     async def ensure_minimum_balance(self, user_id, minimum=100):
         """Ensure a player has at least the minimum balance (for new players)"""
+
         user_id = int(user_id)
         current_balance = await self.get_balance(user_id)
         
@@ -171,12 +205,21 @@ class CurrencyManager:
 
     async def get_leaderboard(self, limit=10):
         """Get the top players by balance"""
+
         sorted_balances = sorted(self.balances.items(), key=lambda x: x[1], reverse=True)
         return sorted_balances[:limit]
     
 
+    async def get_trophies(self, limit=10, item_type='trophy'):
+        """Get the top players by inventory trophy count"""
+
+        sorted_inventories = sorted(self.inventories.items(), key=lambda x: sum([v['count'] for v in x[1].values() if v['type'] == item_type]), reverse=True)
+        return sorted_inventories[:limit]
+    
+
     async def reset_balance(self, user_id, new_balance=0):
         """Reset a player's balance (admin function)"""
+
         user_id = int(user_id)
         
         async with self.lock:

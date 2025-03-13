@@ -14,9 +14,10 @@ class BaseGame(ABC):
     """Base class for all games"""
     
     def __init__(self, players, *args):
-        self.players = players
+        self.requested_players = players
+        self.players = []
         self.current_player_index = 0
-        self.current_player = players[0] if players else None
+        self.current_player = None
         self.is_active = False
         self.is_waiting_for_input = False
         self.required_players = 1
@@ -27,7 +28,7 @@ class BaseGame(ABC):
         self.state = {}
         self.screen = Screen(80, 24)
         self.uses_currency = False
-        
+
 
     @property
     def current_player(self):
@@ -41,13 +42,18 @@ class BaseGame(ABC):
         """Set the current player"""
 
         self._current_player = player
-    
 
-    def add_player(self, player):
+
+    async def add_player(self, player):
         """Add a player to the game"""
+
+        if not self.is_joinable():
+            return False
 
         if player not in self.players:
             self.players.append(player)
+
+        return True
     
 
     def next_turn(self):
@@ -88,6 +94,11 @@ class BaseGame(ABC):
         if self.message:
             display = self.render_display()
             await self.message.edit(content=f"```\n{display}\n```")
+
+
+    async def render_and_send_display(self, ctx):
+        display = self.render_display()
+        return await ctx.send(f"```\n{display}\n```")
 
 
     def serialize_state(self):

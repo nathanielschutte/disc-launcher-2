@@ -117,7 +117,7 @@ class Dice:
 
             screen.draw_text(x, y + i, line)
         
-        return len(face)  # Return height of the die
+        return len(face)
 
 
 class Card:

@@ -10,7 +10,7 @@ from games.dice_lib.logic import DieLogic
 
 DICE_MODES = [
     'beggars',
-    'wagoners',
+    'waggoners',
     'lords',
     'kings'
 ]
@@ -32,14 +32,17 @@ class Game(BaseGame):
             'goal': 100,
             'scores': {},
             'dice': [],
+            'dice_remaining': 6,
             'selected_dice': [],
-            'current_combo': None,
             'combo_value': 0,
+            'combo_trail': [],
+            'selected_combo_value': 0,
             'phase': 'setup', # setup, play, end
             'winner': None,
             'turn_message': "",
             'player_balances': {},
             'player_die': {},
+            'player_die_counter': 0,
             'waiting_for_players': True,
             'dice_style': "fancy"
         }
@@ -54,7 +57,7 @@ class Game(BaseGame):
         if game_mode == 'beggars':
             self.state['bet'] = 3
             self.state['goal'] = 1250
-        elif game_mode == 'wagoners':
+        elif game_mode == 'waggoners':
             self.state['bet'] = 10
             self.state['goal'] = 2000
         elif game_mode == 'lords':
@@ -64,48 +67,28 @@ class Game(BaseGame):
             self.state['bet'] = 100
             self.state['goal'] = 4000
 
-        self.required_players = 1
+        self.required_players = 2
         self.max_players = 2
         self.uses_currency = True
         self.currency_manager = None
-        self.message_ids_to_delete = []
         self.last_activity = 0
     
 
     async def start_game(self, ctx):
         """Start the Dice game"""
 
-        self.state['waiting_for_players'] = len(self.players) < self.required_players
-        
         if self.message:
             await self.message.add_reaction("🎲")
             await self.message.add_reaction("💰")
-            
-        for player in self.players:
-            self.state['scores'][player.id] = 0
-            
-            if self.currency_manager:
-                balance = await self.currency_manager.get_balance(player.id)
-                self.state['player_balances'][player.id] = balance
 
-            self.state['player_die'][player.id] = [get_die('standard')] * 6
-        
-        if self.state['waiting_for_players']:
-            self.is_active = True
-            self.state['turn_message'] = f'Waiting for another player to join "{self.state["dice_mode"]}". React with 🎲 to join!'
-            await self.update_display()
-            return
-        
-        self.state['phase'] = 'play'
-        #self.state['turn_message'] = f"{self.current_player.mention} Please enter bet amount and goal in format 'bet,goal' (e.g. '10,100')"
-        self.state['turn_message'] = f"{self.current_player.mention} Please have another player join the game!"
+        self.is_active = True
 
-        # # just skip to play stage, don't need a betting stage
-        # self.state['phase'] = 'play'
-        # #start_message = await message.channel.send(f"Game started! Initial bet: {bet}, goal: {goal}")
-        # self.state['turn_message'] = f"Game started! Initial bet: {self.state['bet']}, goal: {self.state['goal']}"
-        
-        await super().start_game(ctx)
+        for player in self.requested_players:
+            res, error_msg = await self.add_player(player)
+            if not res:
+                raise GameStartupException(error_msg)
+            
+            print(f'Requested player {player.display_name} joined game')
     
 
     def is_joinable(self):
@@ -114,22 +97,15 @@ class Game(BaseGame):
         return self.is_active and len(self.players) < self.required_players and (self.state['phase'] == 'setup' or self.state['waiting_for_players'])
     
 
-    async def add_player_via_reaction(self, player):
-        """Add a player who joined via reaction"""
-
+    async def add_player(self, player) -> bool:
         bet = self.state['bet']
 
-        if not self.is_joinable() or player in self.players:
-            return False
-        
         if self.currency_manager:
             balance = await self.currency_manager.get_balance(player.id)
             error_msg = None
             
             if balance < bet:
-                error_msg = await self.message.channel.send(
-                    f"{player.display_name} doesn't have enough funds for \"{self.state['dice_mode']}\"! (has {self.currency_manager.amount_string(balance)}, needs {self.currency_manager.amount_string(bet)})"
-                )
+                return False, f"{player.display_name} doesn't have enough funds for \"{self.state['dice_mode']}\"! (has {self.currency_manager.amount_string(balance)}, needs {self.currency_manager.amount_string(bet)})"
             
             if not error_msg:
                 success, new_balance = await self.currency_manager.remove_funds(
@@ -138,33 +114,47 @@ class Game(BaseGame):
                     "dice",
                     f"Bet placed in Dice game"
                 )
+                print(f'Player {player.id} joined and bet {bet} and has {new_balance} left')
                     
                 if success:
                     self.state['player_balances'][player.id] = new_balance
                 else:
-                    error_msg = await self.message.channel.send(
-                        f"Failed to place bet for {player.display_name}: {self.currency_manager.amount_string(bet)} ({self.currency_manager.amount_string(new_balance)})"
-                    )
+                    return False, f"Failed to place bet for {player.display_name}: {self.currency_manager.amount_string(bet)} ({self.currency_manager.amount_string(new_balance)})"
         
-            if error_msg:
-                await asyncio.sleep(3)
-                try:
-                    await error_msg.delete()
-                except:
-                    pass
-
         self.state['scores'][player.id] = 0
 
-        self.add_player(player)
-        
-        if len(self.players) >= self.required_players and self.state['waiting_for_players']:
-            self.state['waiting_for_players'] = False
+        # this could be customized, pulled from player inventory
+        self.state['player_die'][player.id] = [get_die('standard')] * 6
+
+        self.players.append(player)
+        if len(self.players) == 1:
+            self.current_player = player
+
+        self.state['waiting_for_players'] = len(self.players) < self.required_players
+
+        if not self.state['waiting_for_players']:
             self.state['phase'] = 'play'
-            # self.state['turn_message'] = f"{self.current_player.mention} Please enter bet amount and goal in format 'bet,goal' (e.g. '10,100')"
             self.state['turn_message'] = "Ready to play!"
 
             await self.update_display()
             await self.start_turn(self.message.channel)
+        else:
+            self.state['turn_message'] = f'Waiting for another player to join "{self.state["dice_mode"]}". React with 🎲 to join!'
+            await self.update_display()
+
+        return True, None
+    
+
+    async def add_player_via_reaction(self, player):
+        """Add a player who joined via reaction"""
+
+        if not self.is_joinable() or player in self.players:
+            print(f'Player {player.display_name} tried to join but game is not joinable or player is already in the game')
+            return True
+        
+        if not await self.add_player(player):
+            print(f'Player {player.display_name} tried to join but failed to be added to game')
+            return False
             
         return True
     
@@ -175,17 +165,22 @@ class Game(BaseGame):
         screen = self.prepare_screen()
         screen.use_emoji_replacement = True
         
-        Box.draw_box(screen, 1, 1, 78, 22, style="double", title="DICE GAME")
+        Box.draw_box(screen, 1, 1, 78, 22, style="double", title=f"DICE ({self.state['dice_mode']})")
+
+        # HEADER
+        screen.draw_text(4, 3, f"BET: {self.currency_manager.amount_string(self.state['bet'], short=True)}  Goal: {self.state['goal']}")
         
-        screen.draw_text(4, 3, "PLAYERS:")
+        # PLAYERS
+        screen.draw_text(4, 5, "PLAYERS:")
         for i, player in enumerate(self.players[:2]):
-            player_text = f"Player {i+1}: {player.display_name}"
+            player_text = f"P{i+1}: {player.display_name}"
+            player_detail = '     '
             
             if player.id in self.state['scores']:
-                player_text += f" - Game: ${self.state['scores'][player.id]}"
+                player_detail += f"S: {self.state['scores'][player.id]}"
             
-            if player.id in self.state['player_balances']:
-                player_text += f" - Wallet: ${self.state['player_balances'][player.id]}"
+            # if player.id in self.state['player_balances']:
+            #     player_detail += f" W: {self.currency_manager.amount_string(self.state['player_balances'][player.id], short=True)}"
 
             if player.id in self.state['player_die']:
                 die_types = {}
@@ -194,37 +189,36 @@ class Game(BaseGame):
                     die_types[die_type] = die_types.get(die_type, 0) + 1
                 
                 die_text = " | ".join([f"{die_type} x {count}" for die_type, count in die_types.items()])
-                player_text += f" - Dice: {die_text}"
-            
+                player_detail += f" D: [{die_text}]"
+
             if player == self.current_player and self.state['phase'] == 'play':
                 player_text = "-> " + player_text
             else:
                 player_text = "   " + player_text
                 
-            screen.draw_text(4, 5 + i, player_text)
-        
-        screen.draw_text(4, 8, f"Bet: ${self.state['bet']}  Goal: ${self.state['goal']}")
+            screen.draw_text(4, 5 + i*2, player_text)
+            screen.draw_text(4, 6 + i*2, player_detail)
         
         if self.state['waiting_for_players']:
             Box.draw_box(screen, 20, 10, 40, 5, style="single", title="Waiting for Players")
             screen.draw_text(22, 12, "React with 🎲 to join the game!")
             screen.draw_text(3, 22, " 🎲 Join Game | 💰 Show Balance | !end to quit ")
-            
+        
         elif self.state['phase'] == 'setup':
             Box.draw_box(screen, 20, 10, 40, 5, style="rounded", title="Setup Phase")
             screen.draw_text(22, 12, self.state['turn_message'])
             screen.draw_text(3, 22, " 🎲 Join Game | 💰 Show Balance | !end to quit ")
-            
+        
         elif self.state['phase'] == 'play':
             player_name = self.current_player.display_name if self.current_player else "Unknown"
-            Box.draw_box(screen, 30, 3, 45, 3, style="rounded", title=f"{player_name}'s Turn")
+            # screen.draw_text(34, 3, f">>> {player_name}'s turn <<<")
             
             if self.state['dice']:
-                Box.draw_box(screen, 30, 6, 45, 8, style="rounded", title="Current Dice")
+                Box.draw_box(screen, 46, 4, 29, 13, style="rounded", title="Current Dice")
                 
                 for i, die_value in enumerate(self.state['dice']):
-                    die_x = 33 + (i * 8)
-                    die_y = 8
+                    die_x = 49 + ((i % 3) * 8)
+                    die_y = 5 + ((i // 3) * 6)
                     
                     is_selected = (i in self.state['selected_dice'])
                     
@@ -237,27 +231,31 @@ class Game(BaseGame):
                         selected=is_selected
                     )
                     
-                    screen.draw_text(die_x + 3, die_y + 6, str(i + 1))
+                    screen.draw_text(die_x + 1, die_y + 0, str(i + 1))
             
-            if self.state['current_combo']:
-                combo_box_y = 15
-                Box.draw_box(screen, 30, combo_box_y, 45, 4, style="rounded", title="Current Combo")
-                screen.draw_text(33, combo_box_y + 1, f"Combo: {self.state['current_combo']}")
-                screen.draw_text(33, combo_box_y + 2, f"Value: ${self.state['combo_value']}")
+            if self.state['combo_value']:
+                combo_box_y = 12
+                Box.draw_box(screen, 4, combo_box_y, screen.width // 2 - 4, 4, style="rounded", title="Turn Score")
+                score_text = f"Score: {self.state['combo_value']}"
+                if self.state['combo_trail']:
+                    score_text += f" ({' + '.join(self.state['combo_trail'])})"
+                screen.draw_text(6, combo_box_y + 1, score_text)
+                screen.draw_text(6, combo_box_y + 2, f"Selection: {self.state['selected_combo_value']}")
             
-            button_y = 20
-            Button.draw_button(screen, 33, button_y, "Select", width=10)
-            Button.draw_button(screen, 47, button_y, "Roll", width=10)
-            Button.draw_button(screen, 61, button_y, "Pass", width=10)
-            
-            instruction_y = 12
-            Box.draw_box(screen, 4, instruction_y, 20, 9, style="rounded", title="Commands")
-            screen.draw_text(6, instruction_y + 2, "Select: '1,3,5'")
-            screen.draw_text(6, instruction_y + 3, "Roll: 'roll'")
-            screen.draw_text(6, instruction_y + 4, "Pass: 'pass'")
+            instruction_y = 17
+            Box.draw_box(screen, 4, instruction_y, screen.width - 8, 5, style="rounded", title="Commands")
+            # screen.draw_text(6, instruction_y + 2, "Select: ex. '1,3,5'")
+            # screen.draw_text(6, instruction_y + 3, "Continue: 'continue'")
+            # screen.draw_text(6, instruction_y + 4, "Pass: 'pass'")
+
+            button_y = 19
+            button_x = 10
+            Button.draw_button(screen, button_x, button_y, "select (ex. 1,3,5)", width=24)
+            Button.draw_button(screen, button_x + 26, button_y, "> continue", width=12)
+            Button.draw_button(screen, button_x + 26 + 16, button_y, "> pass", width=12)
             
             if self.state['turn_message']:
-                screen.draw_text(6, instruction_y + 6, self.state['turn_message'])
+                screen.draw_text(6, instruction_y + 1, self.state['turn_message'])
             
         elif self.state['phase'] == 'end':
             Box.draw_box(screen, 25, 10, 30, 8, style="rounded", title="Game Over")
@@ -288,8 +286,6 @@ class Game(BaseGame):
             return
         
         command = message.content.strip().lower()
-        
-        self.message_ids_to_delete.append(message.id)
         
         if self.state['phase'] == 'setup':
             await self._process_setup(message, command)
@@ -338,8 +334,6 @@ class Game(BaseGame):
             self.state['goal'] = goal
             self.state['phase'] = 'play'
             
-            self._roll_dice()
-            
             try:
                 await message.delete()
             except:
@@ -377,8 +371,8 @@ class Game(BaseGame):
             
         # actions on selection
         if command in ['continue', 'c']:
-            print(f'Player {self.current_player.id} opted to continue')
-            if not self.state['current_combo']:
+            print(f'Player {self.current_player.display_name} opted to continue')
+            if not self.state['combo_value']:
                 print('No combo selected')
                 error_msg = await message.channel.send("You need to select a valid combo before rolling again!")
                 await asyncio.sleep(3)
@@ -388,38 +382,50 @@ class Game(BaseGame):
                     pass
                 return
                 
-            self.state['scores'][self.current_player.id] += self.state['combo_value']
+            # self.state['scores'][self.current_player.id] += self.state['combo_value']
             
-            if self.state['scores'][self.current_player.id] >= self.state['goal']:
-                print(f'Player {self.current_player.id} has reached the goal')
+            # if self.state['combo_value'] >= self.state['goal']:
+            #     print(f'Player {self.current_player.id} has reached the goal')
 
-                self.state['winner'] = self.current_player.id
-                self.state['phase'] = 'end'
-                self.is_active = False
+            #     self.state['winner'] = self.current_player.id
+            #     self.state['phase'] = 'end'
+            #     self.is_active = False
+            #     self.is_waiting_for_input = False
+
+            #     await self.award_winner(self.current_player.id)
+            #     await self.update_display()
+                
+            #     win_msg = await message.channel.send(f"{self.current_player.display_name} has reached the goal and won!")
+            #     await asyncio.sleep(5)
+                
+            #     try:
+            #         await win_msg.delete()
+            #     except:
+            #         pass
+
+            #     return
+
+            print(f'Player {self.current_player.display_name} is re-rolling...')
+            
+            if not await self._roll_dice():
                 self.is_waiting_for_input = False
+                turn_msg = await message.channel.send(f"{self.current_player.mention} BUST! You lose all score for this turn.")
 
-                await self.award_winner(self.current_player.id)
-                await self.update_display()
-                
-                win_msg = await message.channel.send(f"{self.current_player.display_name} has reached the goal and won!")
-                await asyncio.sleep(5)
-                
+                await asyncio.sleep(4)
                 try:
-                    await win_msg.delete()
+                    await turn_msg.delete()
                 except:
                     pass
 
+                await self.end_turn(message.channel)
                 return
-
-            print(f'Player {self.current_player.id} is re-rolling...')
             
-            self._roll_dice()
-            self.state['turn_message'] = "New roll! Select dice to form a combo."
+            self.state['turn_message'] = "New roll! Select dice."
             await self.update_display()
             
         elif command in ['pass', 'p']:
-            print(f'Player {self.current_player.id} opted to pass')
-            if not self.state['current_combo']:
+            print(f'Player {self.current_player.display_name} opted to pass')
+            if not self.state['combo_value']:
                 print('No combo selected')
                 error_msg = await message.channel.send("You need to select a valid combo before passing!")
                 await asyncio.sleep(3)
@@ -432,32 +438,23 @@ class Game(BaseGame):
             self.state['scores'][self.current_player.id] += self.state['combo_value']
 
             if self.state['scores'][self.current_player.id] >= self.state['goal']:
-                print(f'Player {self.current_player.id} has reached the goal')
+                print(f'Player {self.current_player.display_name} has reached the goal')
                 self.state['winner'] = self.current_player.id
                 self.state['phase'] = 'end'
                 self.is_active = False
                 self.is_waiting_for_input = False
 
                 await self.award_winner(self.current_player.id)
-                
                 await self.update_display()
-                win_msg = await message.channel.send(f"{self.current_player.display_name} has reached the goal and won!")
-                await asyncio.sleep(5)
-                try:
-                    await win_msg.delete()
-                except:
-                    pass
+
                 return
             
-            print(f'Player {self.current_player.id} passes...')
+            print(f'Player {self.current_player.display_name} passes...')
             
-            # next turn ensures the next player's die are used in the roll
-            self.next_turn()
-            self._roll_dice()
             self.state['turn_message'] = f"{self.current_player.display_name} your turn! Select dice to form a combo."
             
             await self.update_display()
-            await self.start_turn(message.channel)
+            await self.end_turn(message.channel)
 
         # selection
         else:
@@ -481,19 +478,28 @@ class Game(BaseGame):
                     except:
                         pass
                     return
-                    
+                
                 self.state['selected_dice'] = selections
                 
-                combo, value = self.logic.check(self.state['dice'], selections)
+                selected = []
+                for i in selections:
+                    selected.append(self.state['dice'][i])
                 
-                if combo:
-                    self.state['current_combo'] = combo
-                    self.state['combo_value'] = value
-                    self.state['turn_message'] = f"Selected {combo} worth ${value}. Type 'continue' to score and roll again or 'pass' to score and end turn."
+                value = self.logic.score(selected)
+                
+                if value:
+                    self.state['combo_value'] += value
+                    self.state['combo_trail'].append(f"{value}")
+                    self.state['selected_combo_value'] = value
+                    self.state['turn_message'] = f"Selection worth {value}. Type 'continue', or 'pass' to end turn"
+                    self.state['dice_remaining'] -= len(selections)
+                
+                    print(f'Player {self.current_player.display_name} selected worth: {value}, {self.state["dice_remaining"]} dice remaining')
                 else:
-                    self.state['current_combo'] = None
-                    self.state['combo_value'] = 0
                     self.state['turn_message'] = "Not a valid combo. Try a different selection."
+                    self.state['selected_dice'] = []
+
+                    print(f'Player {self.current_player.display_name} selected invalid combo')
                 
                 await self.update_display()
                 
@@ -509,32 +515,30 @@ class Game(BaseGame):
     async def start_turn(self, ctx):
         """Start a player's turn"""
         
-        self._roll_dice()
+        self.state['dice_remaining'] = 6
+        self.state['player_die_counter'] = 0
+        self.state['dice'] = []
+        self.state['combo_value'] = 0
+        self.state['combo_trail'] = []
 
-        if self.logic.check_bust(self.state['dice']):
+        if not await self._roll_dice():
             self.is_waiting_for_input = False
-            turn_msg = await ctx.send(f"{self.current_player.mention} BUST! You lose all points for this turn.")
+            turn_msg = await ctx.send(f"{self.current_player.mention} BUST! You lose all score for this turn.")
 
-            self.next_turn()
-
-            self.state['selected_dice'] = []
-            self.state['current_combo'] = None
-            self.state['combo_value'] = 0
-            self.state['turn_message'] = "Bust!"
-            
-            await self.update_display()
-
-            await asyncio.sleep(2)
+            await asyncio.sleep(4)
             try:
                 await turn_msg.delete()
             except:
                 pass
 
-            await self.start_turn(ctx)
+            await self.end_turn(ctx)
             return
         
         self.is_waiting_for_input = True
         turn_msg = await ctx.send(f"{self.current_player.mention} It's your turn!")
+        self.state['turn_message'] = f"{self.current_player.display_name} your turn! Select dice to form a combo."
+
+        await self.update_display()
         
         await asyncio.sleep(3)
         try:
@@ -549,7 +553,9 @@ class Game(BaseGame):
         if not self.currency_manager:
             return
         
-        pot = self.state['bet'] * 2
+        pot = self.state['bet'] * len(self.players)
+
+        await self.currency_manager.add_item(winner_id, f"Dice Medal: {self.state['dice_mode'].capitalize()}", quantity=1, item_type="trophy")
         
         success, new_balance = await self.currency_manager.add_funds(
             winner_id,
@@ -560,15 +566,24 @@ class Game(BaseGame):
         
         if success:
             self.state['player_balances'][winner_id] = new_balance
-            
+        else:
+            print(f'Failed to award winner {winner_id} with {pot}')
+            await self.message.channel.send(f"Failed to award winner {self.current_player.display_name} with {self.currency_manager.amount_string(pot)}")
+            return
+
+        print(f'Player {winner_id} won {pot} and now has {new_balance}')
+        await self.message.channel.send(f"{self.current_player.display_name} won! You earned {self.currency_manager.amount_string(pot)}")
+
 
     async def cleanup_currency(self):
         """Handle any cleanup related to currency when game ends abruptly"""
-        if self.state['phase'] == 'setup' or self.state['winner']:
+
+        if self.state['winner']:
             return
             
-        if self.currency_manager and self.state['phase'] == 'play':
-            for player in self.players[:2]:
+        if self.currency_manager:
+            for player in self.players[:self.max_players]:
+                print(f'Returning bet to player {player.id}')
                 await self.currency_manager.add_funds(
                     player.id,
                     self.state['bet'],
@@ -583,30 +598,51 @@ class Game(BaseGame):
             return
             
         emoji = str(reaction.emoji)
+        msg = None
         
         if emoji == "🎲":
             if self.is_joinable():
                 success = await self.add_player_via_reaction(user)
-                if success:
-                    await reaction.remove(user)
+                await reaction.remove(user)
+                if not success:
+                    msg = await reaction.message.channel.send(f"{user.display_name} failed to join the game")
                     
         elif emoji == "💰":
             if self.currency_manager:
                 balance = await self.currency_manager.get_balance(user.id)
 
                 channel = reaction.message.channel
-                balance_msg = await channel.send(f"{user.mention}, your current balance is ${balance}")
-                
-                await asyncio.sleep(5)
-                try:
-                    await balance_msg.delete()
-                except:
-                    pass
+                msg = await channel.send(f"{user.mention}, your current balance is ${balance}")
                 
             await reaction.remove(user)
 
+        if msg:
+            await asyncio.sleep(4)
+            try:
+                await msg.delete()
+            except:
+                pass
 
-    def _roll_dice(self) -> None:
+
+    async def _roll_dice(self) -> None:
         self.state['selected_dice'] = []
-        self.state['current_combo'] = None
-        self.state['dice'] = [die.roll() for die in self.state['player_die'][self.current_player.id]]
+        self.state['selected_combo_value'] = 0
+
+        queued_die = []
+        for i in range(self.state['dice_remaining']):
+            queued_die.append(self.state['player_die'][self.current_player.id][self.state['player_die_counter']])
+            self.state['player_die_counter'] += 1
+            if self.state['player_die_counter'] >= 6:
+                self.state['player_die_counter'] = 0
+
+        self.state['dice'] = [die.roll() for die in queued_die]
+
+        if self.logic.check_bust(self.state['dice']):
+            self.state['combo_trail'].append('BUST')
+            self.state['turn_message'] = "Bust!"
+            
+            await self.update_display()
+            return False
+
+        return True
+    

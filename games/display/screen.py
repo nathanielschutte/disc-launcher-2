@@ -6,9 +6,12 @@ class Screen:
         self.height = height
         self.clear()
         self.use_emoji_replacement = True  # Option to replace emojis with ASCII alternatives
+        self.double_width = {} # dict with coords to characters that are double width
+
 
     def clear(self):
         self.matrix = [[' ' for _ in range(self.width)] for _ in range(self.height)]
+
 
     def draw_text(self, x, y, text, replace_emoji=None):
         """
@@ -41,6 +44,7 @@ class Screen:
                 self.matrix[y][current_x] = ' '
                 current_x += 1
 
+
     def draw_text_centered(self, x, y, width, text, replace_emoji=None):
         """Draw text centered within a given width"""
         if replace_emoji is None:
@@ -52,6 +56,7 @@ class Screen:
         text_width = get_string_display_width(text)
         start_x = x + max(0, (width - text_width) // 2)
         self.draw_text(start_x, y, text, replace_emoji=False)  # Already replaced if needed
+
 
     def draw_rect(self, x, y, width, height, char='#'):
         for i in range(width):
@@ -66,6 +71,7 @@ class Screen:
                     self.matrix[y + i][x] = char
                 if 0 <= x + width - 1 < self.width:
                     self.matrix[y + i][x + width - 1] = char
+
 
     def draw_line(self, x1, y1, x2, y2, char='-'):
         dx = abs(x2 - x1)
