@@ -85,11 +85,13 @@ class GameManager:
         if channel_id in self.active_games:
             
             game = self.active_games[channel_id]
+            extra = ''
             if hasattr(game, 'cleanup_currency') and callable(game.cleanup_currency):
                 await game.cleanup_currency()
+                extra = ' and currency refunded'
                 
             del self.active_games[channel_id]
-            return True, "Game ended"
+            return True, f"Game ended{extra}"
         
         return False, "No active game in this channel"
     
