@@ -73,7 +73,7 @@ class Game(BaseGame):
             self.state['goal'] = 4000
 
         self.required_players = 2
-        self.max_players = 2
+        self.max_players = 3
         self.uses_currency = True
         self.currency_manager = None
         self.last_activity = 0
@@ -182,7 +182,7 @@ class Game(BaseGame):
         
         # PLAYERS
         screen.draw_text(4, 5, "PLAYERS:")
-        for i, player in enumerate(self.players[:2]):
+        for i, player in enumerate(self.players):
             player_text = f"P{i+1}: {player.display_name}"
             player_detail = '     '
             
@@ -805,13 +805,13 @@ class Game(BaseGame):
         risk_level = 0.6 + (random.random() * 0.4)
 
         if self.state['dice_mode'] == 'beggars':
-            risk_level = 0.6 + (random.random() * 0.3)
+            risk_level = 0.6 + (random.random() * 0.4)
         elif self.state['dice_mode'] == 'waggoners':
             risk_level = 0.5 + (random.random() * 0.4)
         elif self.state['dice_mode'] == 'lords':
-            risk_level = 0.4 + (random.random() * 0.4)
+            risk_level = 0.5 + (random.random() * 0.4)
         elif self.state['dice_mode'] == 'kings':
-            risk_level = 0.4 + (random.random() * 0.3)
+            risk_level = 0.5 + (random.random() * 0.3)
 
         # chill
         #risk_level = 0.4 + (random.random() * 0.2)

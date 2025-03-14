@@ -192,7 +192,7 @@ class DiceAI:
                 return list(selections_by_efficiency[0][0])
         
         # If we're behind, prioritize preserving dice over maximum score
-        if opponent_score > player_score + 750 and dice_remaining < 6:
+        if opponent_score > player_score + 500 and dice_remaining < 6:
             # Look for selections that leave at least half the dice
             for sel, score in sorted(selection_scores.items(), 
                                     key=lambda x: (-x[1], len(x[0]))):
@@ -233,44 +233,51 @@ class DiceAI:
             turn_score, dice_remaining, goal, opponent_score
         )
         
-        # Base pass threshold on risk level and current situation
-        # Significantly lower the base threshold to make AI more willing to continue
-        pass_threshold = 200 - (self.risk_level * 180)
+        # Even lower pass threshold to strongly encourage continuing
+        pass_threshold = 180 - (self.risk_level * 200)
         
         # Adjust threshold based on game state
         
-        # If we're behind, be much more aggressive
+        # If we're behind, be extremely aggressive
         if opponent_score > current_score:
             deficit = opponent_score - current_score
-            pass_threshold -= min(deficit / 3, 150)  # Increased deficit impact
+            pass_threshold -= min(deficit / 2, 200)  # Even stronger deficit impact
         
-        # If opponent is close to winning, be more aggressive
+        # If opponent is close to winning, be very aggressive
         if goal - opponent_score < 500:
-            pass_threshold -= 150  # Increased from 100
+            pass_threshold -= 200
         
-        # If we've accumulated a lot this turn, be a bit more conservative,
-        # but not as much as before to encourage continuing
-        if turn_score > 500:
-            pass_threshold += turn_score / 15  # Reduced from /10
+        # If we've accumulated a lot this turn, be a bit conservative,
+        # but with higher threshold to still encourage continuing
+        if turn_score > 700:  # Increased from 500
+            pass_threshold += turn_score / 20  # Reduced further from /15
         
-        # If we have few dice left, be a bit more cautious, but not too much
+        # Dice remaining strongly influences decision
         if dice_remaining <= 2:
-            pass_threshold += 80  # Reduced from 100
+            pass_threshold += 60  # Reduced further to encourage continuing with few dice
         elif dice_remaining >= 4:
-            # Encourage continuing with lots of dice
+            # Strong bonus for having lots of dice
+            pass_threshold -= 100  # Doubled bonus for having many dice
+        elif dice_remaining == 3:
+            # Even 3 dice is good enough to continue
             pass_threshold -= 50
+        
+        # Special case: if we have started accumulating points but aren't at huge risk
+        if 200 < turn_score < 600 and dice_remaining >= 3:
+            pass_threshold -= 100  # Encourage building on an okay start
         
         # Special case: if we have a hot streak (high turn score)
         # but still far from the goal, be more aggressive
-        if turn_score > 300 and points_needed > 1000:
-            pass_threshold -= 100
+        if turn_score > 300 and points_needed > 800:
+            pass_threshold -= 150  # Increased from 100
         
         # Add randomness for unpredictability (weighted by risk level)
-        random_factor = random.randint(-100, 100) * self.risk_level
+        random_factor = random.randint(-80, 120) * self.risk_level  # Skewed toward continuing
         pass_threshold += random_factor
         
         # Make the decision - Only pass if we have zero dice or exceed threshold
-        if dice_remaining == 0 or (turn_score > pass_threshold and random.random() > self.risk_level * 0.7):
+        # Significantly reduced chance of passing even when over threshold
+        if dice_remaining == 0 or (turn_score > pass_threshold and random.random() > self.risk_level * 0.9):
             return False  # Pass
         else:
             return True   # Continue
@@ -319,7 +326,7 @@ class DiceAI:
 # Example usage:
 if __name__ == "__main__":
     # This would be imported from the game in actual implementation
-    from logic import DieLogic
+    from games.dice_lib.logic import DieLogic
     
     ai = DiceAI(risk_level=0.6)
     ai.set_logic(DieLogic())
