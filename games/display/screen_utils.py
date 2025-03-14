@@ -25,7 +25,7 @@ EMOJI_PATTERN = re.compile(
 EMOJI_REPLACEMENTS = {
     "🎲": "[DICE]",
     "💰": "[MONEY]",
-    # "➤": "->",
+    "▶️": "[PLAY]",
     "💻": "[CPU]",
     # "♠": "S",
     # "♥": "H",

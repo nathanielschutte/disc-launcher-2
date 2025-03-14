@@ -49,8 +49,11 @@ class Game(BaseGame):
             'player_balances': {},
             'player_die': {},
             'player_die_counter': 0,
+            'game_starter': None,
+            'ready_to_start': False,
             'waiting_for_players': True,
-            'dice_style': "fancy"
+            'cpu_joined': False,
+            'dice_style': "fancy",
         }
 
         if len(args) >= 1:
@@ -77,7 +80,7 @@ class Game(BaseGame):
             self.state['goal'] = 5000
 
         self.required_players = 2
-        self.max_players = 3
+        self.max_players = 4
         self.uses_currency = True
         self.currency_manager = None
         self.last_activity = 0
@@ -91,7 +94,14 @@ class Game(BaseGame):
 
         if self.message:
             await self.message.add_reaction("🎲")
-            await self.message.add_reaction("💰")
+            # await self.message.add_reaction("💰")
+            await self.message.add_reaction("💻")
+            await self.message.add_reaction("▶️")
+
+        self.state['turn_message'] = f"Waiting for players to join (0/{self.max_players}) ..."
+
+        if len(self.requested_players) > 0:
+            self.state['game_starter'] = self.requested_players[0]
 
         self.is_active = True
 
@@ -106,7 +116,9 @@ class Game(BaseGame):
     def is_joinable(self):
         """Check if the game can be joined"""
 
-        return self.is_active and len(self.players) < self.required_players and (self.state['phase'] == 'setup' or self.state['waiting_for_players'])
+        return self.is_active and \
+            len(self.players) < self.max_players and \
+            (self.state['phase'] == 'setup' or self.state['waiting_for_players'])
     
 
     async def add_player(self, player) -> bool:
@@ -143,18 +155,12 @@ class Game(BaseGame):
             self.current_player = player
 
         self.state['waiting_for_players'] = len(self.players) < self.required_players
-
         if not self.state['waiting_for_players']:
-            self.state['phase'] = 'play'
-            self.state['turn_message'] = "Ready to play!"
-
-            await self.update_display()
-            # await self.message.clear_reactions()
-            await self.start_turn(self.message.channel)
+            self.state['turn_message'] = f'Joined: {len(self.players)}/{self.max_players} ({player.display_name} joined!)'
         else:
-            self.state['turn_message'] = f'Waiting for another player to join "{self.state["dice_mode"]} ..."'
-            await self.update_display()
-            await self.message.add_reaction("💻")
+            self.state['turn_message'] = f'Joined: {len(self.players)}/{self.max_players} (need {self.required_players}!) ...'
+        
+        await self.update_display()
 
         return True, None
     
@@ -213,16 +219,21 @@ class Game(BaseGame):
             screen.draw_text(4, 5 + i*2, player_text)
             screen.draw_text(4, 6 + i*2, player_detail)
         
-        if self.state['waiting_for_players']:
-            Box.draw_box(screen, 20, 10, 40, 6, style="single", title="Waiting for Players")
-            screen.draw_text(22, 12, "React with 🎲 to join the game!")
-            screen.draw_text(22, 13, "React with 💻 to play against CPU!")
-            screen.draw_text(3, 22, " 🎲 Join | 💰 Show Balance | 💻 vs. CPU | !end to quit ")
+        if self.state['waiting_for_players'] or not self.state['ready_to_start']:
+            title = "Waiting for Players" if self.state['waiting_for_players'] else "Waiting to Start"
+            box_y = 14
+            box_x =18
+            Box.draw_box(screen, box_x, box_y, 42, 7, style="single", title=title)
+            screen.draw_text(box_x+2, box_y+1, "React with 🎲 to join the game!")
+            screen.draw_text(box_x+2, box_y+2, "React with 💻 to play against CPU!")
+            screen.draw_text(box_x+2, box_y+3, "React with ▶️ to start! (game host)")
+            screen.draw_text(box_x+2, box_y+5, self.state['turn_message'])
+            screen.draw_text(3, 22, " 🎲 Join | 💻 Add CPU | ▶️ Start | !end to quit ")
         
-        elif self.state['phase'] == 'setup':
-            Box.draw_box(screen, 20, 10, 40, 5, style="rounded", title="Setup Phase")
-            screen.draw_text(22, 12, self.state['turn_message'])
-            screen.draw_text(3, 22, " 🎲 Join | 💰 Show Balance | 💻 vs. CPU | !end to quit ")
+        # elif self.state['phase'] == 'setup':
+        #     Box.draw_box(screen, 20, 10, 40, 5, style="rounded", title="Setup Phase")
+        #     screen.draw_text(22, 12, self.state['turn_message'])
+        #     screen.draw_text(3, 22, " 🎲 Join | 💻 vs. CPU | !end to quit ")
         
         elif self.state['phase'] == 'play':
             player_name = self.current_player.display_name if self.current_player else "Unknown"
@@ -563,13 +574,17 @@ class Game(BaseGame):
         else:
             if not await self._roll_dice():
                 self.is_waiting_for_input = False
-                turn_msg = await ctx.send(f"{self.current_player.mention} BUST! You lose all score for this turn.")
+                
+                self.state['turn_message'] = "BUST! You lose all score for this turn."
+                await self.update_display()
 
-                await asyncio.sleep(4)
-                try:
-                    await turn_msg.delete()
-                except:
-                    pass
+                # turn_msg = await ctx.send(f"{self.current_player.mention} BUST! You lose all score for this turn.")
+
+                # await asyncio.sleep(4)
+                # try:
+                #     await turn_msg.delete()
+                # except:
+                #     pass
 
                 await self.end_turn(ctx)
                 return
@@ -789,14 +804,12 @@ class Game(BaseGame):
 
         self.players.append(ai_player)
         self.state['waiting_for_players'] = len(self.players) < self.required_players
-        
-        # start game
-        self.state['phase'] = 'play'
-        self.state['turn_message'] = "Ready to play!"
-
+        if not self.state['waiting_for_players']:
+            self.state['turn_message'] = f'Joined: {len(self.players)}/{self.max_players} (CPU joined!)'
+        else:
+            self.state['turn_message'] = f'Joined: {len(self.players)}/{self.max_players} (need {self.required_players}!) ...'
+    
         await self.update_display()
-        # await self.message.clear_reactions()
-        await self.start_turn(self.message.channel)
                 
 
     async def process_reaction(self, reaction, user):
@@ -828,9 +841,44 @@ class Game(BaseGame):
             
         elif emoji == '💻':
             print(f'Player {user.display_name} wants to play against CPU')
+            # await reaction.remove(user)
+            await reaction.message.clear_reaction('💻')
+            
+            if not self.state['cpu_joined'] and len(self.players) < self.max_players:
+                await self.handle_add_ai_player()
+                self.state['cpu_joined'] = True
+            else:
+                print(f'Player {user.display_name} tried to add CPU but game is full or CPU already joined')
+                # msg = await reaction.message.channel.send(
+                #     f"Cannot add CPU: {'A CPU has already joined' if self.state['cpu_joined'] else 'Maximum players reached'}")
+        
+        elif emoji == "▶️":
+            if self.state['game_starter'] and user.id == self.state['game_starter'].id:
+                await reaction.remove(user)
+                
+                if len(self.players) >= self.required_players:
+                    await reaction.message.clear_reaction('▶️')
+                    await reaction.message.clear_reactions()
+                    
+                    self.state['ready_to_start'] = True
+                    self.state['waiting_for_players'] = False
+                    self.state['phase'] = 'play'
+                    self.state['turn_message'] = "Game starting!"
+                    
+                    await self.update_display()
+                    await self.start_turn(reaction.message.channel)
+                else:
+                    print(f'Player {user.display_name} tried to start the game but not enough players')
+                    msg = await reaction.message.channel.send(
+                        f"Need at least {self.required_players} players to start the game!")
+            else:
+                print(f'Player {user.display_name} tried to start the game but is not the game starter')
+
+        else:
             await reaction.remove(user)
-            await self.handle_add_ai_player()
-            await reaction.clear()
+            msg = await reaction.message.channel.send(
+                f"Only {self.state['game_starter'].display_name} can start the game!")
+
 
         if msg:
             await asyncio.sleep(4)
@@ -857,9 +905,7 @@ class Game(BaseGame):
 
         if self.logic.check_bust(self.state['dice']):
             self.state['combo_trail'].append('BUST')
-            self.state['turn_message'] = "Bust!"
-            
-            await self.update_display()
+            # await self.update_display()
             return False
 
         return True
