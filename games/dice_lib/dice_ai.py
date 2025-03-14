@@ -344,6 +344,7 @@ class DiceAI:
                          player_score: int, 
                          opponent_score: int,
                          turn_score: int,
+                         roll_score: int,
                          goal: int,
                          dice_remaining: int) -> Tuple[str, List[int]]:
         """
@@ -354,6 +355,7 @@ class DiceAI:
                 action: 'select', 'continue', or 'pass'
                 dice_indices: List of dice indices to select (only for 'select')
         """
+
         # First, choose which dice to select
         selected_indices = self.choose_dice(
             current_roll, player_score, opponent_score, turn_score, goal, dice_remaining
@@ -366,7 +368,7 @@ class DiceAI:
         new_dice_remaining = dice_remaining - len(selected_indices)
         
         # If this is our first selection in a turn, return it
-        if turn_score == 0:
+        if roll_score == 0:
             return ('select', selected_indices)
         
         # Otherwise, decide whether to continue or pass

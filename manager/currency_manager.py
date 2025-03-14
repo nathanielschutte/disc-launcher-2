@@ -17,7 +17,7 @@ class CurrencyManager:
         self.data_dir = data_dir
         self.currency_file = os.path.join(data_dir, "currency.json")
         self.inventory_file = os.path.join(data_dir, "inventory.json")
-        self.transactions_file = os.path.join(data_dir, "transactions.json")
+        self.transactions_file = os.path.join(data_dir, "transactions.csv")
         self.balances = {}
         self.inventories = {}
         self.lock = asyncio.Lock()
@@ -78,27 +78,32 @@ class CurrencyManager:
         """Log a transaction to the transactions file"""
 
         async with self.lock:
-            transactions = []
-            if os.path.exists(self.transactions_file):
-                try:
-                    with open(self.transactions_file, 'r') as f:
-                        transactions = json.load(f)
-                except json.JSONDecodeError:
-                    transactions = []
+            #transactions = []
+
+            # if os.path.exists(self.transactions_file):
+            #     try:
+            #         with open(self.transactions_file, 'r') as f:
+            #             transactions = json.load(f)
+            #     except json.JSONDecodeError:
+            #         transactions = []
             
-            transaction = {
-                "user_id": user_id,
-                "amount": amount,
-                "type": transaction_type,
-                "timestamp": datetime.now().isoformat(),
-                "game": game,
-                "details": details
-            }
+            # transaction = {
+            #     "user_id": user_id,
+            #     "amount": amount,
+            #     "type": transaction_type,
+            #     "timestamp": datetime.now().isoformat(),
+            #     "game": game,
+            #     "details": details
+            # }
             
-            transactions.append(transaction)
+            # transactions.append(transaction)
+
+            if not os.path.isfile(self.transactions_file):
+                with open(self.transactions_file, 'w') as f:
+                    f.write("timestamp,user_id,amount,type,game,details\n")
             
-            with open(self.transactions_file, 'w') as f:
-                json.dump(transactions, f, indent=2)
+            with open(self.transactions_file, 'a') as f:
+                f.write(f"{datetime.now().isoformat()},{user_id},{amount},{transaction_type},{game},{details}\n")
     
 
     async def get_balance(self, user_id):

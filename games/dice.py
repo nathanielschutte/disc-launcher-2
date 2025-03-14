@@ -149,7 +149,7 @@ class Game(BaseGame):
             self.state['turn_message'] = "Ready to play!"
 
             await self.update_display()
-            await self.message.clear_reactions()
+            # await self.message.clear_reactions()
             await self.start_turn(self.message.channel)
         else:
             self.state['turn_message'] = f'Waiting for another player to join "{self.state["dice_mode"]} ..."'
@@ -605,20 +605,14 @@ class Game(BaseGame):
         
         # going to think before first roll
         await asyncio.sleep(self.ai_action_delay // 2)
+
         if not await self._roll_dice():
-
-            # bust_msg = await ctx.send(f"{self.current_player.display_name} BUST! Losing all points for this turn.")
-            # await asyncio.sleep(3)
-            # try:
-            #     await bust_msg.delete()
-            # except:
-            #     pass
-
             self.state['turn_message'] = f"{self.current_player.display_name} BUST! Losing all points for this turn."
             await self.update_display()
-            await asyncio.sleep(BUST_DELAY)
             
+            await asyncio.sleep(BUST_DELAY)
             await self.end_turn(ctx)
+
             return
         
         await self.update_display()
@@ -635,86 +629,52 @@ class Game(BaseGame):
                 self.state['scores'][self.current_player.id],
                 opponent_score,
                 self.state['combo_value'],
+                self.state['selected_combo_value'],
                 self.state['goal'],
                 self.state['dice_remaining']
             )
             
-            if decision == 'select' or decision == 'continue':
+            if decision == 'select':
                 self.state['selected_dice'] = selected_dice
+                
                 selected_values = [self.state['dice'][i] for i in selected_dice]
                 selection_value = self.logic.score(selected_values)
                 
-                # selection_msg = await ctx.send(
-                #     f"{self.current_player.display_name} selects dice: {', '.join(str(i+1) for i in selected_dice)} "
-                #     f"(worth {selection_value} points)"
-                # )
-
-                self.state['turn_message'] = f"{self.current_player.display_name} selects dice: {', '.join(str(i+1) for i in selected_dice)}"
                 self.state['combo_value'] += selection_value
                 self.state['combo_trail'].append(f"{selection_value}")
                 self.state['selected_combo_value'] = selection_value
                 self.state['dice_remaining'] -= len(selected_dice)
                 
+                print(f'AI: selected dice')
+                self.state['turn_message'] = f"{self.current_player.display_name} selects dice: {', '.join(str(i+1) for i in selected_dice)}"
                 await self.update_display()
 
-                await asyncio.sleep(self.ai_action_delay)
+                # await asyncio.sleep(self.ai_action_delay)
 
-                # await asyncio.sleep(1.5)
-                # try:
-                #     await selection_msg.delete()
-                # except:
-                #     pass
+                # self.state['turn_message'] = f"{self.current_player.display_name} is deciding to continue or pass..."
+                # await self.update_display()
                 
-                # continue!
-                if decision == 'continue':
-                    print(f'AI: continue rolling')
+            elif decision == 'continue':
+                print(f'AI: continue rolling')
 
-                    # continue_msg = await ctx.send(f"{self.current_player.display_name} decides to continue rolling!")
-                    # await asyncio.sleep(1)
-                    # try:
-                    #     await continue_msg.delete()
-                    # except:
-                    #     pass
+                self.state['turn_message'] = f"{self.current_player.display_name} will continue!"
+                await self.update_display()
+                
+                if not await self._roll_dice():
+                    print('AI: bust!')
 
-                    self.state['turn_message'] = f"{self.current_player.display_name} will continue!"
+                    self.state['turn_message'] = f"{self.current_player.display_name} BUST! Losing all points for this turn."
                     await self.update_display()
-                    
-                    if not await self._roll_dice():
-                        print('AI: bust!')
 
-                        # bust_msg = await ctx.send(f"{self.current_player.display_name} BUST! Losing all points for this turn.")
-                        # await asyncio.sleep(3)
-                        # try:
-                        #     await bust_msg.delete()
-                        # except:
-                        #     pass
+                    await asyncio.sleep(BUST_DELAY)
+                    turn_active = False
 
-                        self.state['turn_message'] = f"{self.current_player.display_name} BUST! Losing all points for this turn."
-                        await self.update_display()
-
-                        await asyncio.sleep(BUST_DELAY)
-                        
-                        turn_active = False
-                    
-                    await self.update_display()
-                    
-                # just selected, nothing else
-                elif decision == 'select':
-                    print(f'AI: selected dice')
-
-                    self.state['turn_message'] = f"{self.current_player.display_name} is deciding to continue or pass..."
-                    await self.update_display()
+                await self.update_display()
                 
             elif decision == 'pass':
                 print(f'AI: pass')
 
                 self.state['scores'][self.current_player.id] += self.state['combo_value']
-                
-                # pass_msg = await ctx.send(
-                #     f"{self.current_player.display_name} passes with {self.state['combo_value']} points! "
-                #     f"Total score: {self.state['scores'][self.current_player.id]}"
-                # )
-
                 self.state['turn_message'] = f"{self.current_player.display_name} passes with {self.state['combo_value']} points!"
                 
                 # CPU win?
@@ -730,12 +690,6 @@ class Game(BaseGame):
                 
                 await self.update_display()
                 await asyncio.sleep(self.ai_action_delay)
-                
-                # await asyncio.sleep(2)
-                # try:
-                #     await pass_msg.delete()
-                # except:
-                #     pass
                 
                 turn_active = False
         
@@ -841,7 +795,7 @@ class Game(BaseGame):
         self.state['turn_message'] = "Ready to play!"
 
         await self.update_display()
-        await self.message.clear_reactions()
+        # await self.message.clear_reactions()
         await self.start_turn(self.message.channel)
                 
 
@@ -859,6 +813,9 @@ class Game(BaseGame):
                 await reaction.remove(user)
                 if not success:
                     msg = await reaction.message.channel.send(f"{user.display_name} failed to join the game")
+            else:
+                print(f'Player {user.display_name} tried to join but game is not joinable')
+                await reaction.remove(user)
                     
         elif emoji == "💰":
             if self.currency_manager:
@@ -873,6 +830,7 @@ class Game(BaseGame):
             print(f'Player {user.display_name} wants to play against CPU')
             await reaction.remove(user)
             await self.handle_add_ai_player()
+            await reaction.clear()
 
         if msg:
             await asyncio.sleep(4)
