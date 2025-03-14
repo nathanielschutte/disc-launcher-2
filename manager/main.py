@@ -80,15 +80,16 @@ class GameManager:
         return True, game
     
 
-    def remove_game(self, channel_id):
-        """Remove game"""
+    async def remove_game(self, channel_id):
+        """Remove game (normal)"""
 
         if channel_id in self.active_games:
+            await self.active_games[channel_id].cleanup()
             del self.active_games[channel_id]
 
 
     async def end_game(self, channel_id):
-        """End an active game"""
+        """End an active game (interrupted)"""
 
         if channel_id in self.active_games:
             
@@ -98,6 +99,8 @@ class GameManager:
                 await game.cleanup_currency()
                 extra = ' and currency refunded'
                 
+            await game.cleanup()
+
             del self.active_games[channel_id]
             return True, f"Game ended{extra}"
         
@@ -309,7 +312,7 @@ async def start_game(ctx, game_type: str, *args):
             await ctx.send(f"Failed to start game ({type(e).__name__}): {e}")
             print(f"Failed to start game: {e}")
             print(traceback.format_exc())
-            game_manager.remove_game(ctx.channel.id)
+            await game_manager.remove_game(ctx.channel.id)
 
     else:
         await ctx.send(result)

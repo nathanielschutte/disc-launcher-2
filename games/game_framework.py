@@ -133,7 +133,21 @@ class BaseGame(ABC):
     async def render_and_send_display(self, ctx):
         display = self.render_display()
         return await ctx.send(f"```\n{display}\n```")
+    
 
+    async def cleanup(self):
+        """Cleanup after the game ends"""
+
+        self.is_active = False
+        self.players.clear()
+        self.current_player_index = 0
+        self.current_player = None
+        self.state.clear()
+        
+        if self.message:
+            await self.message.delete()
+            self.message = None
+    
 
     def serialize_state(self):
         """Serialize the game state"""
