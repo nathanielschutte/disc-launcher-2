@@ -134,18 +134,19 @@ async def check_balance(ctx):
 async def daily_bonus(ctx):
     """Claim your daily currency bonus"""
     
-    amount = 50
-    success, result = await currency_manager.add_funds(
-        ctx.author.id, 
-        amount, 
-        "daily", 
-        "Daily bonus claim"
-    )
+    # amount = 50
+    # success, result = await currency_manager.add_funds(
+    #     ctx.author.id, 
+    #     amount, 
+    #     "daily", 
+    #     "Daily bonus claim"
+    # )
     
-    if success:
-        await ctx.send(f"{ctx.author.mention}, you've claimed your daily bonus of ${amount}! Your balance is now ${result}")
-    else:
-        await ctx.send(f"Error: {result}")
+    # if success:
+    #     await ctx.send(f"{ctx.author.mention}, you've claimed your daily bonus of ${amount}! Your balance is now ${result}")
+    # else:
+    #     await ctx.send(f"Error: {result}")
+    
 
 
 @bot.command(name='give')
