@@ -748,8 +748,8 @@ class Game(BaseGame):
             print(f'Player {winner_id} won {pot}!')
 
         await self.message.channel.send(f"{self.current_player.display_name} won! Earned {self.currency_manager.amount_string(pot)} and a trophy: \"Dice Medal: {self.state['dice_mode'].capitalize()}\"")
-
-        self.manager.remove_game(self.message.channel.id)
+        
+        await self.manager.remove_game(self.message.channel.id)
 
 
     async def cleanup_currency(self):

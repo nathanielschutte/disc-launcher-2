@@ -83,9 +83,16 @@ class GameManager:
     async def remove_game(self, channel_id):
         """Remove game (normal)"""
 
+        print(f'Attempting to remove game from channel {channel_id}')
         if channel_id in self.active_games:
-            await self.active_games[channel_id].cleanup()
+            try:
+                await self.active_games[channel_id].cleanup()
+            except Exception:
+                print(f"Error during game cleanup in channel {channel_id}: {traceback.format_exc()}")
             del self.active_games[channel_id]
+            print(f"Game removed from channel {channel_id}")
+        else:
+            print(f"No active game in channel {channel_id} to remove")
 
 
     async def end_game(self, channel_id):
