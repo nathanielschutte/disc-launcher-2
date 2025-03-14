@@ -1,6 +1,7 @@
 """
 AI player for the Dice game
 """
+
 import itertools
 from typing import List, Tuple, Dict, Set, Optional
 import random
@@ -89,12 +90,12 @@ class DiceAI:
         return continue_ev
     
     def choose_dice(self, 
-                   current_roll: List[int], 
-                   player_score: int, 
-                   opponent_score: int,
-                   turn_score: int,
-                   goal: int, 
-                   dice_remaining: int) -> List[int]:
+                current_roll: List[int], 
+                player_score: int, 
+                opponent_score: int,
+                turn_score: int,
+                goal: int, 
+                dice_remaining: int) -> List[int]:
         """
         Choose which dice to select based on current game state
         
@@ -127,16 +128,21 @@ class DiceAI:
         best_indices = list(best_selection[0])  # Convert tuple to list
         best_score = best_selection[1]
         
-        # Now find the expected value of continuing vs stopping
-        # This helps the AI decide whether to select a suboptimal combo to preserve more dice
+        # Check if any selection uses all dice - this is a special case we might want to prioritize
+        all_dice_selections = [(sel, score) for sel, score in selection_scores.items() if len(sel) == len(current_roll)]
+        if all_dice_selections:
+            # Find the highest scoring selection that uses all dice
+            best_all_dice = max(all_dice_selections, key=lambda x: x[1])
+            # If it's a reasonable score (at least 50% of the best score), use it
+            if best_all_dice[1] >= best_score * 0.5:
+                return list(best_all_dice[0])
         
         # If we already have enough to win, make the safest choice
         if player_score + turn_score + best_score >= goal:
             return best_indices
         
-        # If we're at high scores with a safe win, go for the high score
+        # If we have a very high turn score already, prioritize safety
         if turn_score > 1000:
-            # Best score selection
             return best_indices
         
         # Strategy variations by risk level
@@ -146,12 +152,9 @@ class DiceAI:
             for sel, score in sorted(selection_scores.items(), key=lambda x: len(x[0])):
                 if score >= 200:
                     return list(sel)
-            
-        elif self.risk_level > 0.6:  # Lower threshold to apply aggressive strategy more often
-            # Aggressive strategy - try to get the most points possible with fewer dice
-            # Focus on dice efficiency to maximize future potential
-            
-            # Calculate optimal selections based on points-per-die efficiency
+        
+        elif self.risk_level > 0.6:  # More aggressive strategy
+            # First, check if we can get a good score while preserving dice
             efficient_selections = sorted(
                 selection_scores.items(), 
                 key=lambda x: (x[1]/len(x[0]), -len(x[0])), 
@@ -160,46 +163,100 @@ class DiceAI:
             
             # Try to find selections that use fewer dice but still give good scores
             for sel, score in efficient_selections:
-                # If this selection gives at least 60% of the best score but uses fewer dice
-                # (reduced threshold from 70% to encourage more dice preservation)
                 if score >= best_score * 0.6 and len(sel) < len(best_indices):
                     remaining = dice_remaining + (len(best_indices) - len(sel))
-                    if remaining >= 2:  # Reduced from 3 to encourage preserving dice
+                    if remaining >= 2:
                         return list(sel)
             
-            # If we couldn't find a super efficient selection but the most efficient one
-            # is still good, use that (as long as it leaves at least 1 die)
-            if efficient_selections and len(efficient_selections[0][0]) < len(current_roll):
-                best_efficient = efficient_selections[0]
-                if best_efficient[1] >= best_score * 0.75:
-                    return list(best_efficient[0])
+            # See if we can optimize further by checking for unused 1s or 5s
+            # Find all 1s and 5s in the current roll
+            ones_and_fives = [(i, val) for i, val in enumerate(current_roll) if val == 1 or val == 5]
+            
+            # If our best selection doesn't use all 1s and 5s, check if we can add them
+            best_sel_indices = set(best_indices)
+            unused_ones_fives = [i for i, val in ones_and_fives if i not in best_sel_indices]
+            
+            if unused_ones_fives:
+                # Check score with added 1s and 5s
+                extended_indices = best_indices + unused_ones_fives
+                remaining_dice = len(current_roll) - len(extended_indices)
+                extended_dice = [current_roll[i] for i in extended_indices]
+                extended_score = self.die_logic.score(extended_dice)
+                
+                # Special case: Using all dice is advantageous for a complete re-roll
+                if remaining_dice == 0 and extended_score > 0:
+                    return extended_indices
+                
+                # Otherwise, only use this selection if it improves score and leaves at least 1 die
+                elif remaining_dice >= 1 and extended_score > best_score:
+                    return extended_indices
         
-        # Balanced strategy (or fallback)
-        # If we're far from the goal, take more risks
+        # Balanced strategy or fallback
+        # If we're far from the goal, optimize for efficiency
         points_needed = goal - player_score - turn_score
         
-        if points_needed > 800:  # Lowered from 1000 to apply this strategy more often
-            # Look for efficient selections (high points per die)
+        if points_needed > 800:
+            # Look for the most efficient selection (highest points per die)
             selections_by_efficiency = sorted(
                 selection_scores.items(), 
                 key=lambda x: (x[1]/len(x[0]), -len(x[0])), 
                 reverse=True
             )
             
-            # Take the most efficient selection if it's at least 75% as good as the best
-            # (reduced from 80% to pick efficient selections more often)
+            # Take the most efficient selection if it's good enough
             if selections_by_efficiency[0][1] >= best_score * 0.75:
-                return list(selections_by_efficiency[0][0])
+                efficient_sel = list(selections_by_efficiency[0][0])
+                
+                # Extra check: If we're using the efficient selection, check if we've missed any 1s or 5s
+                efficient_indices = set(efficient_sel)
+                missed_ones_fives = [i for i, val in enumerate(current_roll) 
+                                    if (val == 1 or val == 5) and i not in efficient_indices]
+                
+                if missed_ones_fives:
+                    # Add these to our selection
+                    extended_indices = efficient_sel + missed_ones_fives
+                    remaining_dice = len(current_roll) - len(extended_indices)
+                    extended_dice = [current_roll[i] for i in extended_indices]
+                    extended_score = self.die_logic.score(extended_dice)
+                    
+                    # If using all dice, strongly prefer this option if it gives a valid score
+                    if remaining_dice == 0 and extended_score > 0:
+                        return extended_indices
+                    # Otherwise only choose if it improves score and leaves at least one die
+                    elif remaining_dice >= 1 and extended_score > selections_by_efficiency[0][1]:
+                        return extended_indices
+                
+                return efficient_sel
         
         # If we're behind, prioritize preserving dice over maximum score
         if opponent_score > player_score + 500 and dice_remaining < 6:
             # Look for selections that leave at least half the dice
             for sel, score in sorted(selection_scores.items(), 
-                                    key=lambda x: (-x[1], len(x[0]))):
+                                key=lambda x: (-x[1], len(x[0]))):
                 if len(sel) <= len(current_roll) // 2 and score >= best_score * 0.6:
                     return list(sel)
         
         # Default to the highest scoring selection
+        # But check if we can add any 1s or 5s that aren't part of the best selection
+        best_sel_indices = set(best_indices)
+        ones_and_fives = [(i, val) for i, val in enumerate(current_roll) if val == 1 or val == 5]
+        unused_ones_fives = [i for i, val in ones_and_fives if i not in best_sel_indices]
+        
+        # If adding 1s and 5s would use all dice, that's a great option (complete re-roll)
+        # Or if it would still leave at least 1 die, try it
+        if unused_ones_fives:
+            extended_indices = best_indices + unused_ones_fives
+            remaining_dice = len(current_roll) - len(extended_indices)
+            extended_dice = [current_roll[i] for i in extended_indices]
+            extended_score = self.die_logic.score(extended_dice)
+            
+            # If using all dice, strongly prefer this option if it gives a valid score
+            if remaining_dice == 0 and extended_score > 0:
+                return extended_indices
+            # Otherwise, only choose if it improves the score and leaves at least 1 die
+            elif remaining_dice >= 1 and extended_score > best_score:
+                return extended_indices
+        
         return best_indices
     
     def decide_continue_or_pass(self, 
