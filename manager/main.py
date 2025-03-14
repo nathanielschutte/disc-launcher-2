@@ -64,7 +64,7 @@ class GameManager:
         game_class = self.games[game_type.lower()]
         
         try:
-            game = game_class(players, *args)
+            game = game_class(self, players, *args)
         except Exception as e:
             return False, f"Failed to instantiate game ({type(e).__name__}): {e}"
         
@@ -80,8 +80,16 @@ class GameManager:
         return True, game
     
 
+    def remove_game(self, channel_id):
+        """Remove game"""
+
+        if channel_id in self.active_games:
+            del self.active_games[channel_id]
+
+
     async def end_game(self, channel_id):
         """End an active game"""
+
         if channel_id in self.active_games:
             
             game = self.active_games[channel_id]
@@ -281,7 +289,7 @@ async def list_games(ctx):
     await ctx.send(f"Available games: {game_list}")
 
 
-@bot.command(name='start')
+@bot.command(name='start', aliases=['play'])
 async def start_game(ctx, game_type: str, *args):
     """Start a new game"""
     

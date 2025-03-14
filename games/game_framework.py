@@ -13,7 +13,8 @@ class GameStartupException(Exception):
 class BaseGame(ABC):
     """Base class for all games"""
     
-    def __init__(self, players, *args):
+    def __init__(self, manager, players, *args):
+        self.manager = manager
         self.requested_players = players
         self.players = []
         self.current_player_index = 0
@@ -29,6 +30,10 @@ class BaseGame(ABC):
         self.screen = Screen(80, 24)
         self.uses_currency = False
 
+        self.ai_players = []
+        self.ai_thinking = False
+        self.ai_action_delay = 1.5
+
 
     @property
     def current_player(self):
@@ -42,6 +47,35 @@ class BaseGame(ABC):
         """Set the current player"""
 
         self._current_player = player
+
+
+    def add_ai_player(self, name="CPU", avatar_url=None):
+        """Add an AI player to the game"""
+        
+        ai_player = type('AIPlayer', (), {
+            'id': -1000 - len(self.ai_players),
+            'name': name,
+            'display_name': name,
+            'mention': f"@{name}",
+            'avatar_url': avatar_url,
+            'bot': False,
+            'is_ai': True
+        })
+        
+        self.ai_players.append(ai_player)
+
+        return ai_player
+    
+
+    async def handle_ai_turn(self):
+        """Default implementation for AI turn handling"""
+
+        if not hasattr(self.current_player, 'is_ai') or not self.current_player.is_ai:
+            return False
+            
+        await asyncio.sleep(self.ai_action_delay)
+        self.end_turn()
+        return True
 
 
     async def add_player(self, player):

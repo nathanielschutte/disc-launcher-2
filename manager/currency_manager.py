@@ -2,8 +2,9 @@ import os
 import json
 import asyncio
 from datetime import datetime
-
-CURRENCY_TOKEN = "💰"
+    
+# CURRENCY_TOKEN = "💰"
+CURRENCY_TOKEN = "$"
 CURRENCY_TOKEN_SHORT = "$"
 STARTING_BALANCE = 100
 
@@ -104,6 +105,11 @@ class CurrencyManager:
         """Get a player's current balance"""
 
         user_id = int(user_id)
+
+        # AI user
+        if user_id < 0:
+            return 9999999999
+
         if user_id not in self.balances:
             self.balances[user_id] = self.starting_balance
         return self.balances.get(user_id, 0)

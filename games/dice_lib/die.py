@@ -22,6 +22,10 @@ class Die:
     def roll(self):
         return random.choices(range(1, self.sides + 1), weights=self.load)[0]
         
+    
+    def to_string(self) -> str:
+        return f"<{self.die_type} x{self.sides}: {self.load}>"
+
 
     def __str__(self) -> str:
         return self.die_type
