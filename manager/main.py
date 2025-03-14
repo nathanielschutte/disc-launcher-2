@@ -133,6 +133,8 @@ async def check_balance(ctx):
 @bot.command(name='daily')
 async def daily_bonus(ctx):
     """Claim your daily currency bonus"""
+
+    ...
     
     # amount = 50
     # success, result = await currency_manager.add_funds(
@@ -307,6 +309,7 @@ async def start_game(ctx, game_type: str, *args):
             await ctx.send(f"Failed to start game ({type(e).__name__}): {e}")
             print(f"Failed to start game: {e}")
             print(traceback.format_exc())
+            game_manager.remove_game(ctx.channel.id)
 
     else:
         await ctx.send(result)

@@ -13,7 +13,8 @@ DICE_MODES = [
     'beggars',
     'waggoners',
     'lords',
-    'kings'
+    'kings',
+    'realms'
 ]
 
 
@@ -57,7 +58,7 @@ class Game(BaseGame):
             if game_mode in DICE_MODES:
                 self.state['dice_mode'] = game_mode
             else:
-                raise GameStartupException(f"Invalid dice mode: {game_mode}")
+                raise GameStartupException(f"Invalid dice mode: {game_mode} (pick one of {', '.join(DICE_MODES)})")
 
         if game_mode == 'beggars':
             self.state['bet'] = 3
@@ -71,6 +72,9 @@ class Game(BaseGame):
         elif game_mode == 'kings':
             self.state['bet'] = 100
             self.state['goal'] = 4000
+        elif game_mode == 'realms':
+            self.state['bet'] = 300
+            self.state['goal'] = 5000
 
         self.required_players = 2
         self.max_players = 3
@@ -805,13 +809,15 @@ class Game(BaseGame):
         risk_level = 0.6 + (random.random() * 0.4)
 
         if self.state['dice_mode'] == 'beggars':
-            risk_level = 0.6 + (random.random() * 0.4)
+            risk_level = 0.7 + (random.random() * 0.3)
         elif self.state['dice_mode'] == 'waggoners':
-            risk_level = 0.5 + (random.random() * 0.4)
+            risk_level = 0.65 + (random.random() * 0.35)
         elif self.state['dice_mode'] == 'lords':
-            risk_level = 0.5 + (random.random() * 0.4)
+            risk_level = 0.6 + (random.random() * 0.4)
         elif self.state['dice_mode'] == 'kings':
-            risk_level = 0.5 + (random.random() * 0.3)
+            risk_level = 0.55 + (random.random() * 0.3)
+        elif self.state['dice_mode'] == 'realms':
+            risk_level = 0.7 + (random.random() * 0.3)
 
         # chill
         #risk_level = 0.4 + (random.random() * 0.2)
