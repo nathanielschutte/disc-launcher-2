@@ -225,11 +225,11 @@ class Game(BaseGame):
             # screen.draw_text(34, 3, f">>> {player_name}'s turn <<<")
             
             if self.state['dice']:
-                Box.draw_box(screen, 46, 4, 29, 13, style="rounded", title="Current Dice")
+                Box.draw_box(screen, 46, 3, 29, 14, style="rounded", title="Current Dice")
                 
                 for i, die_value in enumerate(self.state['dice']):
                     die_x = 49 + ((i % 3) * 8)
-                    die_y = 5 + ((i // 3) * 6)
+                    die_y = 4 + ((i // 3) * 6)
                     
                     is_selected = (i in self.state['selected_dice'])
                     

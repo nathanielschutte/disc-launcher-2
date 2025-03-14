@@ -98,6 +98,7 @@ class Dice:
         # Default to simple representation
         return [f"[ {value} ]"]
     
+
     @staticmethod
     def draw_die(screen, x, y, value, style="ascii", selected=False, highlight_char="*"):
         """Draw a die on the screen"""
@@ -116,6 +117,8 @@ class Dice:
                             line = line.replace("╰", "╙").replace("╯", "╜")
 
             screen.draw_text(x, y + i, line)
+        if selected:
+            screen.draw_text(x, y + len(face), '—' * len(face[0]))
         
         return len(face)
 
