@@ -16,34 +16,46 @@ class DiceAI:
                         Lower values = more conservative play
                         Higher values = more aggressive play
         """
+
         self.risk_level = max(0.0, min(1.0, risk_level))  # Clamp between 0 and 1
         self.die_logic = None  # Will be set when imported from main game
     
+
     def set_logic(self, die_logic):
         """Set the die logic for scoring calculations"""
+
         self.die_logic = die_logic
     
+
     def _get_all_possible_selections(self, dice: List[int]) -> List[List[int]]:
         """Get all possible dice selections"""
+
         selections = []
+
         for i in range(1, len(dice) + 1):
             # Get all combinations of the given length
             for combo in itertools.combinations(range(len(dice)), i):
                 # Create the selection
                 selections.append(list(combo))
+
         return selections
     
+
     def _score_selections(self, dice: List[int], selections: List[List[int]]) -> Dict[Tuple, int]:
         """
         Score all possible selections and return as {selection_indices: score}
         """
+
         scores = {}
+
         for sel in selections:
             selected_dice = [dice[i] for i in sel]
             score = self.die_logic.score(selected_dice)
             if score > 0:  # Only include valid scoring selections
                 scores[tuple(sel)] = score
+
         return scores
+    
     
     def _calculate_expected_value(self, 
                                score_so_far: int, 
@@ -72,7 +84,8 @@ class DiceAI:
         expected = expected_per_die.get(dice_remaining, 50)
         
         # Calculate bust probability - increases with fewer dice
-        bust_probability = max(0.1, 0.3 - (dice_remaining * 0.04))
+        #bust_probability = max(0.1, 0.3 - (dice_remaining * 0.04))    
+        bust_probability = max(0.05, 0.25 - (dice_remaining * 0.05))
         
         # Expected value if we continue
         continue_ev = score_so_far + (expected * dice_remaining * (1 - bust_probability))
@@ -84,11 +97,67 @@ class DiceAI:
             continue_ev *= 0.9
         
         # If opponent is close to winning, we need to be more aggressive
-        if goal - opponent_score < 500:
-            continue_ev *= 1.1
+        if goal - opponent_score < (goal // 5):
+            continue_ev *= 1.2
         
         return continue_ev
     
+        
+    def _ensure_max_value_selection(self, dice: List[int], current_selection: List[int], selection_score: int) -> Tuple[List[int], int]:
+        """
+        Ensure we're selecting all possible scoring dice when planning to pass
+        
+        Args:
+            dice: Current dice on the table
+            current_selection: Currently selected dice indices
+            selection_score: Current selection score
+            
+        Returns:
+            Tuple of (optimized_selection_indices, new_score)
+        """
+
+        # Get all possible selections including the current selection
+        all_selections = self._get_all_possible_selections(dice)
+        
+        # Find all scoring selections
+        all_scoring = self._score_selections(dice, all_selections)
+        
+        if not all_scoring:
+            return current_selection, selection_score
+        
+        # Find all individual scoring dice (1s and 5s that might be missed)
+        ones_and_fives = [(i, val) for i, val in enumerate(dice) if val == 1 or val == 5]
+        selected_indices = set(current_selection)
+        unused_ones_fives = [i for i, val in ones_and_fives if i not in selected_indices]
+        
+        # If we have unused scoring dice, add them to our selection
+        if unused_ones_fives:
+            extended_indices = current_selection + unused_ones_fives
+            extended_dice = [dice[i] for i in extended_indices]
+            extended_score = self.die_logic.score(extended_dice)
+            
+            if extended_score > selection_score:
+                return extended_indices, extended_score
+        
+        # Look for the highest possible score that uses more dice than our current selection
+        best_score = selection_score
+        best_indices = current_selection
+        
+        for indices, score in all_scoring.items():
+            indices_list = list(indices)
+            if len(indices_list) > len(best_indices) and score >= best_score:
+                best_indices = indices_list
+                best_score = score
+        
+        # Special check: if we can use all dice with a valid score, prioritize that
+        for indices, score in all_scoring.items():
+            indices_list = list(indices)
+            if len(indices_list) == len(dice) and score > 0:
+                return indices_list, score
+                
+        return best_indices, best_score
+
+
     def choose_dice(self, 
                 current_roll: List[int], 
                 player_score: int, 
@@ -110,6 +179,7 @@ class DiceAI:
         Returns:
             List of dice indices to select (0-based)
         """
+        
         if not self.die_logic:
             raise ValueError("Die logic not set. Call set_logic() first.")
         
@@ -222,8 +292,10 @@ class DiceAI:
                     # If using all dice, strongly prefer this option if it gives a valid score
                     if remaining_dice == 0 and extended_score > 0:
                         return extended_indices
-                    # Otherwise only choose if it improves score and leaves at least one die
-                    elif remaining_dice >= 1 and extended_score > selections_by_efficiency[0][1]:
+                    # # Otherwise only choose if it improves score and leaves at least one die
+                    # elif remaining_dice >= 1 and extended_score > selections_by_efficiency[0][1]:
+                    # Otherwise only choose if it improves score
+                    elif extended_score > selections_by_efficiency[0][1]:
                         return extended_indices
                 
                 return efficient_sel
@@ -259,12 +331,12 @@ class DiceAI:
         
         return best_indices
     
-    def decide_continue_or_pass(self, 
-                               current_score: int, 
-                               turn_score: int, 
-                               opponent_score: int,
-                               goal: int,
-                               dice_remaining: int) -> bool:
+    def decide_continue_or_pass(self,
+                           current_score: int, 
+                           turn_score: int, 
+                           opponent_score: int,
+                           goal: int,
+                           dice_remaining: int) -> bool:
         """
         Decide whether to continue rolling or pass
         
@@ -278,9 +350,17 @@ class DiceAI:
         Returns:
             True to continue, False to pass
         """
+
         # If we can win by passing, always pass
         if current_score + turn_score >= goal:
             return False
+        
+        # No dice left and chance to re-roll all 6
+        if dice_remaining == 0:
+            if turn_score >= 500 + self.risk_level * 700:
+                return False
+            else:
+                return True
         
         # Calculate points needed to win
         points_needed = goal - current_score - turn_score
@@ -290,7 +370,7 @@ class DiceAI:
             turn_score, dice_remaining, goal, opponent_score
         )
         
-        # Even lower pass threshold to strongly encourage continuing
+        # Base pass threshold on risk level with a less conservative baseline
         pass_threshold = 180 - (self.risk_level * 200)
         
         # Adjust threshold based on game state
@@ -298,55 +378,62 @@ class DiceAI:
         # If we're behind, be extremely aggressive
         if opponent_score > current_score:
             deficit = opponent_score - current_score
-            pass_threshold -= min(deficit / 2, 200)  # Even stronger deficit impact
+            pass_threshold -= min(deficit / 2, 300)  # Increased max to 300
         
         # If opponent is close to winning, be very aggressive
         if goal - opponent_score < 500:
-            pass_threshold -= 200
+            pass_threshold -= 250  # Increased from 200
         
         # If we've accumulated a lot this turn, be a bit conservative,
         # but with higher threshold to still encourage continuing
-        if turn_score > 700:  # Increased from 500
-            pass_threshold += turn_score / 20  # Reduced further from /15
+        if turn_score > 700:
+            pass_threshold += turn_score / 20
         
         # Dice remaining strongly influences decision
         if dice_remaining <= 2:
-            pass_threshold += 60  # Reduced further to encourage continuing with few dice
+            pass_threshold += 60
         elif dice_remaining >= 4:
             # Strong bonus for having lots of dice
-            pass_threshold -= 100  # Doubled bonus for having many dice
+            pass_threshold -= 120
         elif dice_remaining == 3:
             # Even 3 dice is good enough to continue
-            pass_threshold -= 50
+            pass_threshold -= 70
         
         # Special case: if we have started accumulating points but aren't at huge risk
         if 200 < turn_score < 600 and dice_remaining >= 3:
-            pass_threshold -= 100  # Encourage building on an okay start
+            pass_threshold -= 120  # Increased from 100
         
         # Special case: if we have a hot streak (high turn score)
         # but still far from the goal, be more aggressive
         if turn_score > 300 and points_needed > 800:
-            pass_threshold -= 150  # Increased from 100
+            pass_threshold -= 180  # Increased from 150
         
         # Add randomness for unpredictability (weighted by risk level)
-        random_factor = random.randint(-80, 120) * self.risk_level  # Skewed toward continuing
+        random_factor = random.randint(-80, 120) * self.risk_level
         pass_threshold += random_factor
         
-        # Make the decision - Only pass if we have zero dice or exceed threshold
-        # Significantly reduced chance of passing even when over threshold
-        if dice_remaining == 0 or (turn_score > pass_threshold and random.random() > self.risk_level * 0.9):
+        # Additional protection against passing with low scores
+        if turn_score < 200 and dice_remaining > 0:
+            return True
+        
+        # Additional protection: never pass with a single die selection if others are available
+        if dice_remaining >= 5 and turn_score < 400:
+            return True
+        
+        # Make the decision - Only pass if we exceed threshold
+        if turn_score > pass_threshold and random.random() > self.risk_level * 0.9:
             return False  # Pass
         else:
-            return True   # Continue
-            
+            return True
+                
     def make_turn_decision(self, 
-                         current_roll: List[int], 
-                         player_score: int, 
-                         opponent_score: int,
-                         turn_score: int,
-                         roll_score: int,
-                         goal: int,
-                         dice_remaining: int) -> Tuple[str, List[int]]:
+                        current_roll: List[int], 
+                        player_score: int, 
+                        opponent_score: int,
+                        turn_score: int,
+                        roll_score: int,
+                        goal: int,
+                        dice_remaining: int) -> Tuple[str, List[int]]:
         """
         Make a complete turn decision - what dice to select and whether to continue
         
@@ -355,7 +442,6 @@ class DiceAI:
                 action: 'select', 'continue', or 'pass'
                 dice_indices: List of dice indices to select (only for 'select')
         """
-
         # First, choose which dice to select
         selected_indices = self.choose_dice(
             current_roll, player_score, opponent_score, turn_score, goal, dice_remaining
@@ -379,7 +465,22 @@ class DiceAI:
         if continue_decision:
             return ('continue', selected_indices)
         else:
-            return ('pass', selected_indices)
+            # When passing, ensure we're selecting all possible scoring dice
+            # to maximize value before ending the turn
+            optimized_indices, optimized_score = self._ensure_max_value_selection(
+                current_roll, selected_indices, selection_score
+            )
+            
+            # If we're very far behind, we should be more aggressive
+            deficit = opponent_score - player_score
+            if deficit > (goal // 5) and new_turn_score < 300 and new_dice_remaining > 0:
+                return ('continue', optimized_indices)
+                
+            # Never pass with a very low score unless we have no choice (no dice left)
+            if new_turn_score < 100 + self.risk_level * 200 and new_dice_remaining > 0:
+                return ('continue', optimized_indices)
+            
+            return ('pass', optimized_indices)
 
 
 # Example usage:

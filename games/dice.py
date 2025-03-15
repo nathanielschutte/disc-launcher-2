@@ -674,6 +674,10 @@ class Game(BaseGame):
 
                 self.state['turn_message'] = f"{self.current_player.display_name} will continue!"
                 await self.update_display()
+
+                if self.state['dice_remaining'] == 0:
+                    self.state['dice_remaining'] = 6
+                    self.state['dice'] = []
                 
                 if not await self._roll_dice():
                     print('AI: bust!')
@@ -748,7 +752,7 @@ class Game(BaseGame):
             print(f'Player {winner_id} won {pot}!')
 
         await self.message.channel.send(f"{self.current_player.display_name} won! Earned {self.currency_manager.amount_string(pot)} and a trophy: \"Dice Medal: {self.state['dice_mode'].capitalize()}\"")
-        
+
         await self.manager.remove_game(self.message.channel.id)
 
 
