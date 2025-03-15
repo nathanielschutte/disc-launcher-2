@@ -476,8 +476,8 @@ class DiceAI:
             if deficit > (goal // 5) and new_turn_score < 300 and new_dice_remaining > 0:
                 return ('continue', optimized_indices)
                 
-            # Never pass with a very low score unless we have no choice (no dice left)
-            if new_turn_score < 100 + self.risk_level * 200 and new_dice_remaining > 0:
+            # Never pass with a very low score unless we have few dice
+            if new_turn_score < 100 + self.risk_level * 200 and new_dice_remaining > 3:
                 return ('continue', optimized_indices)
             
             return ('pass', optimized_indices)
