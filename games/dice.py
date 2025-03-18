@@ -290,7 +290,7 @@ class Game(BaseGame):
                 winner = next((p for p in self.players if p.id == self.state['winner']), None)
                 if winner:
                     screen.draw_text(30, 12, f"{winner.display_name} WINS!")
-                    screen.draw_text(30, 14, f"Final Score: ${self.state['scores'][winner.id]}")
+                    screen.draw_text(30, 14, f"Final Score: {self.state['scores'][winner.id]}")
                     
                     if winner.id in self.state['player_balances']:
                         screen.draw_text(30, 15, f"New Balance: ${self.state['player_balances'][winner.id]}")
