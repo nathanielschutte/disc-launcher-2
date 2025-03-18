@@ -606,6 +606,7 @@ class Game(BaseGame):
         """Handle an AI player's turn"""
 
         self.is_waiting_for_input = False
+        self.state['roll_count'] = 0
         
         ai_handler = self.ai_handlers.get(self.current_player.id)
         if not ai_handler:
@@ -614,7 +615,6 @@ class Game(BaseGame):
             return
         
         turn_msg = None
-        # turn_msg = await ctx.send(f"{self.current_player.display_name} is thinking...")
         self.state['turn_message'] = f"{self.current_player.display_name}'s turn, thinking..."
         await self.update_display()
         
@@ -629,6 +629,8 @@ class Game(BaseGame):
             await self.end_turn(ctx)
 
             return
+
+        self.state['roll_count'] = self.state.get('roll_count', 0) + 1
         
         await self.update_display()
         
@@ -639,37 +641,33 @@ class Game(BaseGame):
             opponent_id = next((p.id for p in self.players if p.id != self.current_player.id), None)
             opponent_score = self.state['scores'].get(opponent_id, 0) if opponent_id else 0
             
-            decision, selected_dice = ai_handler.make_turn_decision(
+            continue_turn, selected_dice = ai_handler.make_turn_decision(
                 self.state['dice'],
                 self.state['scores'][self.current_player.id],
-                opponent_score,
+                [opponent_score],
                 self.state['combo_value'],
-                self.state['selected_combo_value'],
+                self.state['roll_count'],
                 self.state['goal'],
                 self.state['dice_remaining']
             )
             
-            if decision == 'select':
-                self.state['selected_dice'] = selected_dice
-                
-                selected_values = [self.state['dice'][i] for i in selected_dice]
-                selection_value = self.logic.score(selected_values)
-                
-                self.state['combo_value'] += selection_value
-                self.state['combo_trail'].append(f"{selection_value}")
-                self.state['selected_combo_value'] = selection_value
-                self.state['dice_remaining'] -= len(selected_dice)
-                
-                print(f'AI: selected dice')
-                self.state['turn_message'] = f"{self.current_player.display_name} selects dice: {', '.join(str(i+1) for i in selected_dice)}"
-                await self.update_display()
+            self.state['selected_dice'] = selected_dice
+            
+            selected_values = [self.state['dice'][i] for i in selected_dice]
+            selection_value = self.logic.score(selected_values)
+            
+            self.state['combo_value'] += selection_value
+            self.state['combo_trail'].append(f"{selection_value}")
+            self.state['selected_combo_value'] = selection_value
+            self.state['dice_remaining'] -= len(selected_dice)
+            
+            print(f'AI: selected dice')
+            self.state['turn_message'] = f"{self.current_player.display_name} selects dice: {', '.join(str(i+1) for i in selected_dice)}"
+            await self.update_display()
 
-                # await asyncio.sleep(self.ai_action_delay)
-
-                # self.state['turn_message'] = f"{self.current_player.display_name} is deciding to continue or pass..."
-                # await self.update_display()
+            await asyncio.sleep(self.ai_action_delay)
                 
-            elif decision == 'continue':
+            if continue_turn:
                 print(f'AI: continue rolling')
 
                 self.state['turn_message'] = f"{self.current_player.display_name} will continue!"
@@ -686,17 +684,18 @@ class Game(BaseGame):
                     await self.update_display()
 
                     await asyncio.sleep(BUST_DELAY)
-                    turn_active = False
-
+                    break
+                    
+                self.state['roll_count'] = self.state.get('roll_count', 0) + 1
                 await self.update_display()
                 
-            elif decision == 'pass':
+            else:
                 print(f'AI: pass')
 
                 self.state['scores'][self.current_player.id] += self.state['combo_value']
                 self.state['turn_message'] = f"{self.current_player.display_name} passes with {self.state['combo_value']} points!"
                 
-                # CPU win?
+                # CPU win
                 if self.state['scores'][self.current_player.id] >= self.state['goal']:
                     self.state['winner'] = self.current_player.id
                     self.state['phase'] = 'end'
@@ -705,7 +704,7 @@ class Game(BaseGame):
                     await self.award_winner(self.current_player.id)
                     await self.update_display()
                     
-                    return
+                    break
                 
                 await self.update_display()
                 await asyncio.sleep(self.ai_action_delay)
@@ -790,13 +789,12 @@ class Game(BaseGame):
         elif self.state['dice_mode'] == 'kings':
             risk_level = 0.55 + (random.random() * 0.3)
         elif self.state['dice_mode'] == 'realms':
-            risk_level = 0.7 + (random.random() * 0.3)
+            risk_level = 0.55 + (random.random() * 0.3)
 
         # chill
         #risk_level = 0.4 + (random.random() * 0.2)
 
-        ai_brain = DiceAI(risk_level=risk_level)
-        ai_brain.set_logic(self.logic)
+        ai_brain = DiceAI(risk_level=risk_level, logic=self.logic)
 
         print(f'Added AI player {ai_player.display_name} with risk level {risk_level}')
 
@@ -812,7 +810,8 @@ class Game(BaseGame):
             self.state['turn_message'] = f'Joined: {len(self.players)}/{self.max_players} (CPU joined!)'
         else:
             self.state['turn_message'] = f'Joined: {len(self.players)}/{self.max_players} (need {self.required_players}!) ...'
-    
+        
+        self.state['roll_count'] = 0
         await self.update_display()
                 
 
