@@ -85,10 +85,10 @@ class GameManager:
 
         print(f'Attempting to remove game from channel {channel_id}')
         if channel_id in self.active_games:
-            try:
-                await self.active_games[channel_id].cleanup()
-            except Exception:
-                print(f"Error during game cleanup in channel {channel_id}: {traceback.format_exc()}")
+            # try:
+            #     await self.active_games[channel_id].cleanup()
+            # except Exception:
+            #     print(f"Error during game cleanup in channel {channel_id}: {traceback.format_exc()}")
             del self.active_games[channel_id]
             print(f"Game removed from channel {channel_id}")
         else:
