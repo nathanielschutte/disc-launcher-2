@@ -260,7 +260,7 @@ class Game(BaseGame):
                     screen.draw_text(die_x + 1, die_y + 0, str(i + 1))
             
             if self.state['combo_value']:
-                combo_box_y = 12
+                combo_box_y = 13
                 Box.draw_box(screen, 4, combo_box_y, screen.width // 2 - 4, 4, style="rounded", title="Turn Score")
                 score_text = f"Score: {self.state['combo_value']}"
                 if self.state['combo_trail']:
