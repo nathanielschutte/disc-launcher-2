@@ -155,7 +155,7 @@ class DiceGameSimulator:
             if verbose:
                 print("AI continues rolling.")
 
-def train_and_evaluate(train_new_model=True, evaluation_games=100):
+def train_and_evaluate(train_new_model=True, evaluation_games=10):
     """Train the DQN model and evaluate against rule-based AI
     
     Args:
@@ -265,7 +265,7 @@ def train_and_evaluate(train_new_model=True, evaluation_games=100):
 if __name__ == "__main__":
     # Parse command line arguments
     train_new = True
-    num_games = 50
+    num_games = 10
     
     if len(sys.argv) > 1:
         if sys.argv[1].lower() in ['false', '0', 'no']:

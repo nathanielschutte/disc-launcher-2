@@ -24,113 +24,99 @@ class DiceGameEnvironment:
         self.dice_remaining = 6
         
     def reset(self, player_score=0, opponent_score=0):
-        """Reset the environment for a new game/turn"""
+        """Reset the environment for a new game/turn with debugging"""
+        # print(f"DEBUG: Resetting environment, player_score={player_score}, opponent_score={opponent_score}")
         self.current_roll = self._generate_roll(6)
+        # print(f"DEBUG: Initial roll: {self.current_roll}")
         self.player_score = player_score
         self.opponent_score = opponent_score
         self.turn_score = 0
         self.dice_remaining = 6
         return self._get_state()
     
+
     def _generate_roll(self, num_dice):
-        """Generate a random dice roll"""
-        return [random.randint(1, 6) for _ in range(num_dice)]
+        """Generate a random dice roll that's guaranteed to not be a bust"""
+
+        # max_attempts = 10  # Limit attempts to prevent infinite loops
+        
+        # for attempt in range(max_attempts):
+        #     # Generate a roll
+        #     roll = [random.randint(1, 6) for _ in range(num_dice)]
+            
+        #     # Check if it's a bust
+        #     if not self.die_logic.check_bust(roll):
+        #         return roll
+            
+        #     print(f"DEBUG: Generated a bust roll {roll}, retrying ({attempt+1}/{max_attempts})")
+        
+        # If we've tried max_attempts times and still got busts, 
+        # force some 1's and 5's which are always scorable
+        # print("DEBUG: Forcing a non-bust roll after maximum attempts")
+
+        roll = [random.randint(1, 6) for _ in range(num_dice)]
+        
+        # # Ensure at least one scorable die (1 or 5)
+        # if num_dice > 0:
+        #     roll[0] = random.choice([1, 5])
+        
+        return roll
     
     def step(self, action):
         """
-        Take an action in the environment
-        
-        Actions:
-        - For dice selection: tuple or list of dice indices to select
-        - For continue/pass decision: 'continue' or 'pass'
-        
-        Returns:
-        - next_state: The new state after taking the action
-        - reward: The reward for taking the action
-        - done: Whether the game is finished
-        - info: Additional information
+        Take an action in the environment.
+        Action is now a tuple of (dice_selection, continue_or_pass)
         """
-        reward = 0
-        done = False
-        info = {"action_type": "unknown"}
-        
-        # Handle empty or None actions
-        if action is None or (isinstance(action, (list, tuple)) and len(action) == 0):
-            print("WARNING: Empty action received")
+
+        if action is None:
+            # No valid actions available
             return self._get_state(), -100, True, {"action_type": "invalid"}
         
-        # Dice selection action
-        if isinstance(action, (tuple, list)):
-            info["action_type"] = "select"
-            # Convert to list if tuple
-            action = list(action) if isinstance(action, tuple) else action
-            
-            # Validate the action
-            if not all(0 <= idx < len(self.current_roll) for idx in action):
-                print(f"Invalid selection: {action} for roll {self.current_roll}")
-                return self._get_state(), -50, True, info
-            
-            # Get the selected dice values
-            selected_dice = [self.current_roll[i] for i in action]
-            selection_score = self.die_logic.score(selected_dice)
-            
-            if selection_score == 0:
-                print(f"Invalid scoring selection: {selected_dice}")
-                return self._get_state(), -50, True, info
-            
-            # Update state based on selection
-            self.turn_score += selection_score
-            self.dice_remaining -= len(action)
-            self.selected_dice = action
-            
-            # Small positive reward for valid selection, proportional to score
-            reward = selection_score / 100
-            
-            # If no dice left, automatically roll again with 6 dice
+        selection, decision = action
+        reward = 0
+        done = False
+        info = {"action_type": f"select_{decision}"}
+        
+        # First process the dice selection
+        if not all(0 <= idx < len(self.current_roll) for idx in selection):
+            return self._get_state(), -50, True, {"action_type": "invalid_selection"}
+        
+        # Get selected dice values
+        selected_dice = [self.current_roll[i] for i in selection]
+        selection_score = self.die_logic.score(selected_dice)
+        
+        if selection_score == 0:
+            return self._get_state(), -50, True, {"action_type": "invalid_score"}
+        
+        # Update state based on selection
+        self.turn_score += selection_score
+        self.dice_remaining -= len(selection)
+        self.selected_dice = selection
+        
+        # Process decision (continue or pass)
+        if decision == 'continue':
+            # If no dice left, roll new dice
             if self.dice_remaining == 0:
                 self.dice_remaining = 6
                 self.current_roll = self._generate_roll(6)
-                # Check if new roll is a bust
+                
+                # Check for bust
                 if self.die_logic.check_bust(self.current_roll):
-                    print("BUST after using all dice!")
-                    reward = -self.turn_score / 100  # Negative reward proportional to lost score
+                    reward = -self.turn_score / 100  # Negative reward
                     self.turn_score = 0
                     done = True  # End of turn
+                    return self._get_state(), reward, done, info
             else:
                 # Remove selected dice
                 new_roll = []
                 for i, die in enumerate(self.current_roll):
-                    if i not in action:
+                    if i not in selection:
                         new_roll.append(die)
                 self.current_roll = new_roll
             
-        elif action == 'continue':
-            info["action_type"] = "continue"
-            # Check if we have a turn score (must have selected dice first)
-            if self.turn_score == 0:
-                print("Tried to continue without scoring first")
-                return self._get_state(), -50, True, info
-            
-            # Roll new dice
-            self.current_roll = self._generate_roll(self.dice_remaining)
-            
-            # Check if the roll is a bust
-            if self.die_logic.check_bust(self.current_roll):
-                print(f"BUST on continue! Turn score lost: {self.turn_score}")
-                reward = -self.turn_score / 100  # Negative reward proportional to lost score
-                self.turn_score = 0
-                done = True  # End of turn
-            else:
-                # Small reward for successful reroll
-                reward = 0.1
-                
-        elif action == 'pass':
-            info["action_type"] = "pass"
-            # Check if we have a turn score (must have selected dice first)
-            if self.turn_score == 0:
-                print("Tried to pass without scoring first")
-                return self._get_state(), -50, True, info
-            
+            # Reward for selection and continuing
+            reward = selection_score / 100 + 0.1
+        else:  # 'pass'
             # Add turn score to player score
             self.player_score += self.turn_score
             
@@ -139,24 +125,18 @@ class DiceGameEnvironment:
             
             # Check for win
             if self.player_score >= self.goal:
-                print(f"WIN! Player reached {self.player_score} points, goal was {self.goal}")
                 reward += 100  # Big reward for winning
-                done = True
-            else:
-                # End of turn
-                done = True
-                
-                # Additional reward if we're catching up or extending our lead
-                if self.player_score > self.opponent_score:
-                    reward += 2
-                    
-            print(f"PASS with {self.turn_score} points. New score: {self.player_score}")
-        else:
-            print(f"Unknown action type: {action}")
-            return self._get_state(), -100, True, {"action_type": "unknown"}
+            
+            # End of turn
+            done = True
+            
+            # Additional reward if ahead
+            if self.player_score > self.opponent_score:
+                reward += 2
         
         return self._get_state(), reward, done, info
     
+
     def _get_state(self):
         """
         Convert the current game state to a feature vector for the neural network
@@ -196,19 +176,9 @@ class DiceGameEnvironment:
 class DQNAgent:
     """Deep Q-Learning agent for the dice game"""
     
-    def __init__(self, state_size, action_size, die_logic):
+    def __init__(self, state_size, die_logic):
         self.state_size = state_size
-        self.action_size = action_size
         self.die_logic = die_logic
-
-        # Action mapping
-        self.possible_dice_selections = self._get_all_possible_selections(6)
-        self.dice_selection_actions = len(self.possible_dice_selections)
-        self.special_actions = 2  # continue, pass
-
-        if self.action_size is None:
-            self.action_size = len(self.possible_dice_selections) + self.special_actions
-            print(f'Set action size to {self.action_size} based on possible selections and special actions')
         
         # Hyperparameters
         self.gamma = 0.95  # Discount factor
@@ -216,6 +186,13 @@ class DQNAgent:
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
         self.learning_rate = 0.001
+        
+        # Get all possible selections and actions
+        self.possible_selections = self._get_all_possible_selections(6)
+        self.possible_actions = self._get_all_actions(6)
+        
+        # Action size is all possible (selection, decision) pairs
+        self.action_size = len(self.possible_actions)
         
         # Replay memory
         self.memory = deque(maxlen=10000)
@@ -246,10 +223,35 @@ class DQNAgent:
             for combo in itertools.combinations(range(max_dice), i):
                 selections.append(list(combo))
         return selections
+
+    def _get_all_actions(self, max_dice):
+        """Get all possible actions as (dice_selection, continue_or_pass) pairs"""
+        actions = []
+        
+        # Get all possible dice selections
+        selections = []
+        for i in range(1, max_dice + 1):
+            for combo in itertools.combinations(range(max_dice), i):
+                selections.append(list(combo))
+        
+        # For each selection, create two actions (continue or pass)
+        for selection in selections:
+            actions.append((selection, 'continue'))
+            actions.append((selection, 'pass'))
+        
+        return actions
     
-    def _get_valid_actions(self, state, current_roll, dice_remaining, turn_score):
-        """Get the valid actions for the current state"""
+
+    def _get_valid_actions(self, state, current_roll, turn_score):
+        """Get valid actions for the current state with enhanced debugging"""
         valid_actions = []
+        
+        # If no dice to select, return empty list
+        if not current_roll or len(current_roll) == 0:
+            print(f"WARNING: Empty current_roll: {current_roll}")
+            return valid_actions
+        
+        # print(f"DEBUG: Finding valid actions for roll: {current_roll}, turn_score: {turn_score}")
         
         # Get all possible dice selections
         possible_selections = []
@@ -257,76 +259,107 @@ class DQNAgent:
             for combo in itertools.combinations(range(len(current_roll)), i):
                 possible_selections.append(list(combo))
         
+        # print(f"DEBUG: Generated {len(possible_selections)} possible selections")
+        
         # Score each selection
         for sel in possible_selections:
-            selected_dice = [current_roll[i] for i in sel]
-            score = self.die_logic.score(selected_dice)
-            if score > 0:  # Only include valid scoring selections
-                valid_actions.append(sel)
+            try:
+                selected_dice = [current_roll[i] for i in sel]
+                score = self.die_logic.score(selected_dice)
+                
+                if score > 0:  # Valid scoring selection
+                    # print(f"DEBUG: Selection {sel} -> dice {selected_dice} -> score {score}")
+                    # First time selecting this turn, can only continue
+                    if turn_score == 0:
+                        valid_actions.append((sel, 'continue'))
+                    else:
+                        # Can choose to continue or pass after initial selection
+                        valid_actions.append((sel, 'continue'))
+                        valid_actions.append((sel, 'pass'))
+            except Exception as e:
+                print(f"Error scoring selection {sel} from roll {current_roll}: {e}")
+                continue
         
-        # Add continue/pass options if there's a turn score
-        if turn_score > 0 and dice_remaining > 0:
-            valid_actions.append('continue')
-            valid_actions.append('pass')
-        elif turn_score > 0:
-            valid_actions.append('pass')
-            
+        # print(f"DEBUG: Found {len(valid_actions)} valid actions")
         return valid_actions
     
+
     def _action_to_index(self, action):
         """Convert an action to its index in the output layer"""
-        if isinstance(action, list) or isinstance(action, tuple):
-            # Find the index of this dice selection in our possible selections
-            action_tuple = tuple(sorted(action))
-            for i, sel in enumerate(self.possible_dice_selections):
-                if tuple(sorted(sel)) == action_tuple:
-                    return i
-        elif action == 'continue':
-            return self.dice_selection_actions
-        elif action == 'pass':
-            return self.dice_selection_actions + 1
+
+        selection, decision = action
         
-        # Invalid action
-        return -1
+        # First, find the index of this selection within all possible selections
+        selection_tuple = tuple(sorted(selection))
+        selection_index = -1
+        for i, sel in enumerate(self.possible_selections):
+            if tuple(sorted(sel)) == selection_tuple:
+                selection_index = i
+                break
+        
+        if selection_index == -1:
+            return -1  # Invalid selection
+        
+        # Calculate action index based on selection index and decision
+        if decision == 'continue':
+            return selection_index * 2
+        else:  # 'pass'
+            return selection_index * 2 + 1
     
+
     def _index_to_action(self, index):
         """Convert an output index to the corresponding action"""
-        if index < self.dice_selection_actions:
-            return self.possible_dice_selections[index]
-        elif index == self.dice_selection_actions:
-            return 'continue'
-        elif index == self.dice_selection_actions + 1:
-            return 'pass'
+
+        selection_index = index // 2
+        is_continue = (index % 2) == 0
         
-        # Invalid index
-        return None
+        if selection_index >= len(self.possible_selections):
+            return None  # Invalid index
+        
+        selection = self.possible_selections[selection_index]
+        decision = 'continue' if is_continue else 'pass'
+        
+        return (selection, decision)
     
+
     def memorize(self, state, action, reward, next_state, done):
         """Store experience in replay memory"""
+
+        # Skip storing experiences with None actions
+        if action is None:
+            return
+        
         action_index = self._action_to_index(action)
         if action_index >= 0:
             self.memory.append((state, action_index, reward, next_state, done))
     
-    def act(self, state, current_roll, dice_remaining, turn_score, training=True):
+
+    def act(self, state, current_roll, turn_score, training=True):
         """Choose an action based on the current state"""
-        valid_actions = self._get_valid_actions(state, current_roll, dice_remaining, turn_score)
+
+        valid_actions = self._get_valid_actions(state, current_roll, turn_score)
         
         if not valid_actions:
-            # If no valid actions, return pass (will end the turn if possible)
-            print("No valid actions available!")
-            if turn_score > 0:
-                return 'pass'
-            # If we have no turn score yet but no valid moves, just select the first die
-            # This shouldn't happen in a proper game but prevents getting stuck
+            # No valid actions available
+            # Return a default action rather than None
+            # This is a fallback and shouldn't happen in normal gameplay
             if len(current_roll) > 0:
-                return [0]
-            return []
+                # Try selecting the first die and continuing
+                default_action = ([0], 'continue')
+                # Check if this would be valid
+                selected_die = [current_roll[0]]
+                if self.die_logic.score(selected_die) > 0:
+                    return default_action
+                
+            # If we can't construct a valid default action, log a warning
+            # print("WARNING: No valid actions available, returning None")
+            return None
         
-        # Exploration: choose a random action with probability epsilon
+        # Exploration: choose random action
         if training and np.random.rand() <= self.epsilon:
             return random.choice(valid_actions)
         
-        # Exploitation: choose the best action based on the model
+        # Exploitation: choose best action
         act_values = self.model.predict(np.array([state]), verbose=0)[0]
         
         # Filter to only valid actions
@@ -336,10 +369,11 @@ class DQNAgent:
         if not valid_values:
             return random.choice(valid_actions)
         
-        # Choose the action with the highest Q-value
+        # Choose action with highest Q-value
         best_index, _ = max(valid_values, key=lambda x: x[1])
         return self._index_to_action(best_index)
     
+
     def replay(self, batch_size):
         """Train the model using randomly sampled experiences"""
         if len(self.memory) < batch_size:
@@ -509,76 +543,83 @@ def train_dice_ai_debug(die_logic, episodes=10000, batch_size=64, save_interval=
     return agent
         
 
-def train_dice_ai(die_logic, episodes=10000, batch_size=64, save_interval=1000):
-    """
-    Train the DQN agent for the dice game
-    
-    Args:
-        die_logic: The logic for scoring dice
-        episodes: Number of training episodes
-        batch_size: Size of batches for replay training
-        save_interval: How often to save the model
-    """
+def train_dice_ai(die_logic, episodes=10000, batch_size=64, save_interval=1000, max_steps_per_episode=100):
     # Initialize environment
     env = DiceGameEnvironment(die_logic, goal=2000)
     
-    # Determine state and action sizes
+    # Determine state size
     state = env.reset()
     state_size = len(state)
     
-    # Calculate action size
-    agent = DQNAgent(state_size, None, die_logic)
+    # Initialize agent with the state size
+    agent = DQNAgent(state_size, die_logic)
     
-    # Create output directory if it doesn't exist
+    # Create output directory
     if not os.path.exists('models'):
         os.makedirs('models')
     
+    # Training metrics
+    all_rewards = []
+    all_steps = []
+    all_scores = []
+    
     # Training loop
     for e in range(episodes):
-        # Reset environment
         state = env.reset(player_score=random.randint(0, 1000),
-                          opponent_score=random.randint(0, 1500))
+                         opponent_score=random.randint(0, 1500))
         done = False
         total_reward = 0
+        steps = 0
         
-        while not done:
-            print(f'Episode: {e}, State: {state}, Player Score: {env.player_score}, Opponent Score: {env.opponent_score}, Turn Score: {env.turn_score}, Dice Remaining: {env.dice_remaining}')
-
+        # Episode loop
+        while not done and steps < max_steps_per_episode:
             # Get action from agent
-            action = agent.act(state, env.current_roll, env.dice_remaining, env.turn_score)
+            action = agent.act(state, env.current_roll, env.turn_score)
             
             # Take action in environment
             next_state, reward, done, _ = env.step(action)
             
-            # Store experience in memory
+            # Store experience
             agent.memorize(state, action, reward, next_state, done)
             
             # Move to next state
             state = next_state
             total_reward += reward
+            steps += 1
             
             # Train network
             if len(agent.memory) > batch_size:
                 agent.replay(batch_size)
         
-        # Update target network every episode
+        # Update target network
         if e % 10 == 0:
             agent.update_target_model()
+
+        print(f'Episode {e+1}/{episodes}, Steps: {steps}, Player Score: {env.player_score}, '
+              f'Total Reward: {total_reward:.2f}, Epsilon: {agent.epsilon:.4f}')
         
         # Save model periodically
         if e % save_interval == 0:
             agent.save(f'models/dice_ai_episode_{e}.h5')
             print(f"Episode: {e}/{episodes}, Score: {env.player_score}, Reward: {total_reward}, Epsilon: {agent.epsilon:.2f}")
+        
+        # Record metrics
+        all_rewards.append(total_reward)
+        all_steps.append(steps)
+        all_scores.append(env.player_score)
     
     # Save final model
     agent.save('models/dice_ai_final.h5')
+    
     return agent
+
 
 class DiceAI:
     """
     AI player for the Dice game using deep Q-learning
     This class wraps the DQN agent to match your existing interface
     """
+    
     def __init__(self, risk_level=0.5, logic=None):
         self.risk_level = max(0.0, min(1.0, risk_level))
         self.die_logic = logic
@@ -596,13 +637,15 @@ class DiceAI:
     
     def _initialize_agent(self):
         """Initialize or load the DQN agent"""
-        self.agent = DQNAgent(self.state_size, self.action_size, self.die_logic)
+
+        self.agent = DQNAgent(self.state_size, self.die_logic)
         
         # Try to load a pre-trained model if available
         try:
             self.agent.load('models/dice_ai_final.h5')
             print("Loaded pre-trained model")
-        except:
+        except Exception as e:
+            print(f'Error loading pre-trained model: {e}')
             print("No pre-trained model found, using new model")
     
     def set_logic(self, die_logic):
@@ -618,6 +661,25 @@ class DiceAI:
             for combo in itertools.combinations(range(dice), i):
                 selections.append(list(combo))
         return selections
+    
+
+    def _get_all_actions(self, max_dice):
+        """Get all possible actions as (dice_selection, continue_or_pass) pairs"""
+        actions = []
+        
+        # Get all possible dice selections
+        selections = []
+        for i in range(1, max_dice + 1):
+            for combo in itertools.combinations(range(max_dice), i):
+                selections.append(list(combo))
+        
+        # For each selection, create two actions (continue or pass)
+        for selection in selections:
+            actions.append((selection, 'continue'))
+            actions.append((selection, 'pass'))
+        
+        return actions
+    
     
     def _score_selections(self, dice, selections):
         """Score all possible selections and return as {selection_indices: score}"""
@@ -728,42 +790,37 @@ class DiceAI:
         # If the action is a dice selection, we should continue
         # (this shouldn't happen here, but just in case)
         return True
-    
-    def make_turn_decision(self, current_roll, player_score, opponent_score, turn_score, roll_count, goal, dice_remaining):
+
+
+    def make_turn_decision(self, current_roll, player_score, opponent_score, turn_score, roll_count, goal, dice_remaining=None):
         """
-        Make a complete turn decision - what dice to select and whether to continue
-        
-        This method matches the interface used in your game code
+        Make a complete turn decision using the unified approach.
+        Returns (continue_decision, selected_dice) to match the existing interface.
         """
-        # Handle both interface versions for backward compatibility  
+
+        # Calculate dice_remaining for backward compatibility
         if dice_remaining is None:
             dice_remaining = 6 - len(current_roll)
         
-        # If first selection of turn
-        if turn_score == 0:
-            selected_indices = self.choose_dice(
-                current_roll, player_score, opponent_score, turn_score, goal, dice_remaining
-            )
-            return True, selected_indices
+        # Prepare state for the agent
+        state = self._prepare_game_state(current_roll, player_score, opponent_score, turn_score, dice_remaining)
         
-        # Choose dice
-        selected_indices = self.choose_dice(
-            current_roll, player_score, opponent_score, turn_score, goal, dice_remaining
-        )
+        # Get unified action from agent
+        action = self.agent.act(state, current_roll, turn_score, training=False)
         
-        # Calculate new turn score after this selection
-        selected_dice = [current_roll[i] for i in selected_indices]
-        selection_score = self.die_logic.score(selected_dice)
-        new_turn_score = turn_score + selection_score
-        new_dice_remaining = dice_remaining - len(selected_indices)
+        if action is None:
+            # No valid actions - shouldn't happen in normal game
+            # Return a default based on the risk level
+            if turn_score > 0 and self.risk_level < 0.5:
+                return False, [0] if len(current_roll) > 0 else []
+            else:
+                return True, [0] if len(current_roll) > 0 else []
         
-        # Decide whether to continue or pass
-        continue_decision = self.decide_continue_or_pass(
-            player_score, new_turn_score, opponent_score, goal, new_dice_remaining
-        )
+        # Unpack the action
+        selected_dice, decision = action
+        continue_decision = (decision == 'continue')
         
-        # Return decision and selected dice
-        return continue_decision, selected_indices
+        return continue_decision, selected_dice
 
 
 # Example usage:
