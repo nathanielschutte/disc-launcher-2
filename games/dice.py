@@ -6,7 +6,7 @@ from games.display.screen_utils import replace_emojis
 
 from games.dice_lib.die import get_die
 from games.dice_lib.logic import DieLogic
-from games.dice_lib.dice_ai import DiceAI
+from games.dice_lib.dice_ai_dqn import DiceAI
 
 
 DICE_MODES = [
