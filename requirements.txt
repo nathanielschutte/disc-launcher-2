@@ -1,5 +1,5 @@
 python-dotenv
-discord
+discord.py
 matplotlib
 keras
 numpy
