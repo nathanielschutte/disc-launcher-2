@@ -1,2 +1,6 @@
 python-dotenv
 discord
+matplotlib
+keras
+numpy
+tensorflow
