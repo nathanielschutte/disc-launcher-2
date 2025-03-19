@@ -209,7 +209,8 @@ class DQNAgent:
         model.add(Dense(128, input_dim=self.state_size, activation='relu'))
         model.add(Dense(128, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss='mse', optimizer=Adam(learning_rate=self.learning_rate))
+        # model.compile(loss='mse', optimizer=Adam(learning_rate=self.learning_rate))
+        model.compile(loss=tf.keras.losses.MeanSquaredError(), optimizer=Adam(learning_rate=self.learning_rate))
         return model
     
     def update_target_model(self):
@@ -620,9 +621,13 @@ class DiceAI:
     This class wraps the DQN agent to match your existing interface
     """
     
-    def __init__(self, risk_level=0.5, logic=None):
+    def __init__(self, risk_level=0.5, logic=None, continue_learning=False):
         self.risk_level = max(0.0, min(1.0, risk_level))
         self.die_logic = logic
+        self.continue_learning = continue_learning
+        self.learning_frequency = 10  # How many decisions before training
+        self.decision_counter = 0
+        self.experiences = []  # Store game experiences
         
         # Get or initialize the DQN agent
         self.state_size = 41  # 36 (dice one-hot) + 5 game state features
@@ -819,6 +824,63 @@ class DiceAI:
         # Unpack the action
         selected_dice, decision = action
         continue_decision = (decision == 'continue')
+
+        if self.continue_learning and self.agent:
+            print(f'DEBUG: Learning from action: {action}, continue_decision: {continue_decision}')
+            state = self._prepare_game_state(current_roll, player_score, opponent_score, turn_score, dice_remaining)
+            action = (selected_dice, decision)
+
+            self.experiences.append({
+                'state': state,
+                'action': action,
+                'reward': 0,  # Placeholder, will update
+                'turn_score': turn_score
+            })
+            
+            reward = None
+            
+            # If we have a previous experience, update its reward based on this turn's outcome
+            if len(self.experiences) > 1:
+                prev_exp = self.experiences[-2]
+                if decision == 'pass':
+                    # Reward for successfully banking points
+                    reward = (turn_score - prev_exp['turn_score']) / 100
+                    prev_exp['reward'] = reward
+                    prev_exp['next_state'] = state
+                    prev_exp['done'] = True
+                    
+                    # Add to agent's memory
+                    self.agent.memorize(
+                        prev_exp['state'], 
+                        prev_exp['action'],
+                        prev_exp['reward'],
+                        prev_exp['next_state'],
+                        prev_exp['done']
+                    )
+                elif decision == 'continue':
+                    # If continuing, reward is based on points gained
+                    reward = (turn_score - prev_exp['turn_score']) / 200  # Smaller reward for continuing
+                    prev_exp['reward'] = reward
+                    prev_exp['next_state'] = state
+                    prev_exp['done'] = False
+                    
+                    # Add to agent's memory
+                    self.agent.memorize(
+                        prev_exp['state'], 
+                        prev_exp['action'],
+                        prev_exp['reward'],
+                        prev_exp['next_state'],
+                        prev_exp['done']
+                    )
+
+            print(f'DEBUG: Updated experience with reward: {reward}, continue_decision: {continue_decision}')
+            
+            # Periodically train the model
+            self.decision_counter += 1
+            if self.decision_counter >= self.learning_frequency and len(self.agent.memory) > 32:
+                self.agent.replay(batch_size=32)
+                self.decision_counter = 0
+                print(f'DEBUG: Trained agent with batch size 32, reset decision counter')
         
         return continue_decision, selected_dice
 

@@ -794,7 +794,7 @@ class Game(BaseGame):
         # chill
         #risk_level = 0.4 + (random.random() * 0.2)
 
-        ai_brain = DiceAI(risk_level=risk_level, logic=self.logic)
+        ai_brain = DiceAI(risk_level=risk_level, logic=self.logic, continue_learning=True)
 
         print(f'Added AI player {ai_player.display_name} with risk level {risk_level}')
 

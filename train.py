@@ -180,6 +180,8 @@ def train_and_evaluate(train_new_model=True, evaluation_games=10):
         print(f"Training completed in {training_time:.2f} seconds")
     else:
         print("Skipping training, using pre-trained model if available.")
+
+    # return
     
     # 2. Initialize AIs for evaluation
     dqn_ai = DQN_AI(risk_level=0.7)
