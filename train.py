@@ -55,7 +55,7 @@ def plot_results(results):
 
 from games.dice_lib.logic import DieLogic
 from games.dice_lib.dice_ai_claude import DiceAI as RuleBasedAI
-from games.dice_lib.dice_ai_dqn import DiceAI as DQN_AI, DiceGameEnvironment, train_dice_ai
+from games.dice_lib.dice_ai_dqn_round2 import DiceAI as DQN_AI, DiceGameEnvironment, train_dice_ai_improved
 
 # Define a simple progress indicator to replace tqdm if not available
 def tqdm(iterable, **kwargs):
@@ -174,7 +174,7 @@ def train_and_evaluate(train_new_model=True, evaluation_games=10):
         start_time = time.time()
         
         # For production, use more episodes (10000+)
-        dqn_agent = train_dice_ai(die_logic, episodes=10000, batch_size=64, save_interval=500)
+        dqn_agent = train_dice_ai_improved(die_logic, episodes=2000, batch_size=64, save_interval=500)
         
         training_time = time.time() - start_time
         print(f"Training completed in {training_time:.2f} seconds")
